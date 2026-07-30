@@ -5,7 +5,7 @@ from httpx import ASGITransport, AsyncClient
 
 from app.crud.blob import crud_create_blob
 from app.crud.credential import crud_create_credential
-from app.db.mongodb import get_database
+from app.db.session import get_database
 from app.main import app
 from app.models.blob import BlobInCreate
 from app.models.credential import ROLE_READONLY, ROLE_READWRITE, CredentialInCreate
@@ -60,7 +60,7 @@ async def test_list_v2_delimiter(mock_db, monkeypatch):
     )
 
     async def override_db():
-        return mock_db
+        yield mock_db
 
     app.dependency_overrides[get_database] = override_db
     try:
@@ -102,7 +102,7 @@ async def test_versioning_stub(mock_db, monkeypatch):
     )
 
     async def override_db():
-        return mock_db
+        yield mock_db
 
     app.dependency_overrides[get_database] = override_db
     try:
@@ -121,17 +121,23 @@ async def test_credential_rbac_roles(mock_db):
     from app.models.bucket import Bucket
     from app.models.user import User
 
-    await mock_db["telezon_test"]["users"].insert_one(
-        {
-            "username": "alice",
-            "email": "alice@example.com",
-            "access_key_id": "PRIMARYKEY000001",
-            "secret_key": "primarysecret0001",
-            "role": "user",
-            "salt": "x",
-            "hashed_password": "x",
-        }
+    from app.crud.user import crud_create_user
+    from app.models.user import UserInCreate
+
+    await crud_create_user(
+        mock_db,
+        UserInCreate(
+            username="alice",
+            email="alice@example.com",
+            password="secret",
+        ),
     )
+    from app.db.tables import UserRow
+
+    row = await mock_db.get(UserRow, "alice")
+    row.access_key_id = "PRIMARYKEY000001"
+    row.secret_key = "primarysecret0001"
+    await mock_db.flush()
     ro = await crud_create_credential(
         mock_db,
         "alice",

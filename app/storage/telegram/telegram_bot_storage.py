@@ -2,7 +2,7 @@ import logging
 
 from app.core.config import CID, TG_RATE_WAIT_SECONDS
 from app.storage.errors import StorageThrottleError
-from app.storage.storage import PutFileResult, Storage
+from app.storage.backend import PutFileResult, Storage
 from app.storage.telegram.bot import bot
 from app.storage.telegram_limiter import telegram_rate_limiter
 

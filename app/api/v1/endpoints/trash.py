@@ -1,5 +1,5 @@
+from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import APIRouter, Depends, HTTPException, Query
-from motor.motor_asyncio import AsyncIOMotorClient
 from starlette.status import HTTP_403_FORBIDDEN, HTTP_404_NOT_FOUND, HTTP_409_CONFLICT
 
 from app.api.auth.utils import is_admin
@@ -12,7 +12,7 @@ from app.crud.trash import (
     crud_get_trash,
     crud_list_trash,
 )
-from app.db.mongodb import get_database
+from app.db.session import get_database
 from app.models.blob import BlobFilterParams, BlobInCreate
 from app.models.bucket import BucketFilterParams
 from app.models.trash import TrashEmptyRequest, TrashPublic, TrashRestoreRequest
@@ -61,7 +61,7 @@ async def list_trash(
     bucket: str = "",
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
-    db: AsyncIOMotorClient = Depends(get_database),
+    db: AsyncSession = Depends(get_database),
     current_user: User = Depends(get_current_user),
 ):
     if bucket:
@@ -80,7 +80,7 @@ async def list_trash(
 @router.post("/restore", response_model=TrashPublic)
 async def restore_trash(
     payload: TrashRestoreRequest,
-    db: AsyncIOMotorClient = Depends(get_database),
+    db: AsyncSession = Depends(get_database),
     current_user: User = Depends(get_current_user),
 ):
     item = await crud_get_trash(db, payload.trash_id)
@@ -120,7 +120,7 @@ async def restore_trash(
 @router.delete("/{trash_id}")
 async def permanent_delete_trash(
     trash_id: str,
-    db: AsyncIOMotorClient = Depends(get_database),
+    db: AsyncSession = Depends(get_database),
     current_user: User = Depends(get_current_user),
 ):
     item = await crud_get_trash(db, trash_id)
@@ -139,7 +139,7 @@ async def permanent_delete_trash(
 @router.post("/empty")
 async def empty_trash(
     payload: TrashEmptyRequest,
-    db: AsyncIOMotorClient = Depends(get_database),
+    db: AsyncSession = Depends(get_database),
     current_user: User = Depends(get_current_user),
 ):
     await _assert_can_manage_trash(db, current_user, payload.bucket)

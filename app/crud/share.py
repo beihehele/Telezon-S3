@@ -2,12 +2,12 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
-from motor.motor_asyncio import AsyncIOMotorClient
+from sqlalchemy import and_, or_, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import DATABASE_NAME
+from app.db.mappers import share_from_row
+from app.db.tables import ShareRow
 from app.models.share import Share, ShareInCreate
-
-COLLECTION = "shares"
 
 
 def _hash_share_password(password: str) -> str:
@@ -22,7 +22,7 @@ def _verify_share_password(password: str, stored: str) -> bool:
 
 
 async def crud_create_share(
-    db: AsyncIOMotorClient, payload: ShareInCreate, owner_username: str
+    db: AsyncSession, payload: ShareInCreate, owner_username: str
 ) -> Share:
     token = secrets.token_urlsafe(24)
     now = datetime.now(timezone.utc)
@@ -40,39 +40,76 @@ async def crud_create_share(
         created_at=now,
         updated_at=now,
     )
-    await db[DATABASE_NAME][COLLECTION].insert_one(share.model_dump())
+    row = ShareRow(
+        token=share.token,
+        bucket=share.bucket,
+        key=share.key,
+        password_hash=share.password_hash,
+        expires_at=share.expires_at,
+        max_downloads=share.max_downloads,
+        download_count=0,
+        owner_username=share.owner_username,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(row)
+    await db.flush()
     return share
 
 
-async def crud_get_share(db: AsyncIOMotorClient, token: str) -> Share | None:
-    row = await db[DATABASE_NAME][COLLECTION].find_one({"token": token})
+async def crud_get_share(db: AsyncSession, token: str) -> Share | None:
+    result = await db.execute(select(ShareRow).where(ShareRow.token == token))
+    row = result.scalar_one_or_none()
     if not row:
         return None
-    return Share(**row)
+    return share_from_row(row)
 
 
-async def crud_delete_share(db: AsyncIOMotorClient, token: str) -> bool:
-    result = await db[DATABASE_NAME][COLLECTION].delete_one({"token": token})
-    return result.deleted_count > 0
+async def crud_delete_share(db: AsyncSession, token: str) -> bool:
+    row = await db.get(ShareRow, token)
+    if not row:
+        return False
+    await db.delete(row)
+    await db.flush()
+    return True
 
 
-async def crud_claim_share_download(db: AsyncIOMotorClient, token: str) -> Share | None:
-    now = datetime.now(timezone.utc)
-    row = await db[DATABASE_NAME][COLLECTION].find_one_and_update(
-        {
-            "token": token,
-            "expires_at": {"$gt": now},
-            "$or": [
-                {"max_downloads": None},
-                {"$expr": {"$lt": ["$download_count", "$max_downloads"]}},
-            ],
-        },
-        {"$inc": {"download_count": 1}},
-        return_document=True,
+async def crud_delete_expired_shares(db: AsyncSession, now: datetime) -> int:
+    from sqlalchemy import delete
+
+    result = await db.execute(delete(ShareRow).where(ShareRow.expires_at < now))
+    return int(result.rowcount or 0)
+
+
+async def crud_release_share_download(db: AsyncSession, token: str) -> bool:
+    result = await db.execute(
+        update(ShareRow)
+        .where(ShareRow.token == token, ShareRow.download_count > 0)
+        .values(download_count=ShareRow.download_count - 1)
     )
+    return (result.rowcount or 0) > 0
+
+
+async def crud_claim_share_download(db: AsyncSession, token: str) -> Share | None:
+    now = datetime.now(timezone.utc)
+    usable = and_(
+        ShareRow.token == token,
+        ShareRow.expires_at > now,
+        or_(
+            ShareRow.max_downloads.is_(None),
+            ShareRow.download_count < ShareRow.max_downloads,
+        ),
+    )
+    result = await db.execute(
+        update(ShareRow)
+        .where(usable)
+        .values(download_count=ShareRow.download_count + 1)
+        .returning(ShareRow)
+    )
+    row = result.scalar_one_or_none()
     if not row:
         return None
-    return Share(**row)
+    return share_from_row(row)
 
 
 def share_is_usable(share: Share) -> bool:

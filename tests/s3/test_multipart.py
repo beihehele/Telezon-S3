@@ -1,7 +1,7 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.db.mongodb import get_database
+from app.db.session import get_database
 from app.main import app
 from app.models.bucket import Bucket
 from app.models.user import User
@@ -77,9 +77,9 @@ async def test_multipart_create_upload_part_complete(mock_db, fake_storage, monk
     monkeypatch.setattr("app.s3.handlers.object.crud_get_all_blobs", fake_get_all)
     monkeypatch.setattr("app.s3.handlers.object.storage", fake_storage)
 
-    # Use real mongomock for multipart metadata collections
+    # Multipart metadata in SQL tables (see crud_multipart).
     async def override_db():
-        return mock_db
+        yield mock_db
 
     headers = _auth_headers()
     app.dependency_overrides[get_database] = override_db

@@ -4,7 +4,7 @@ import hashlib
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.db.mongodb import get_database
+from app.db.session import get_database
 from app.main import app
 from app.models.blob import Blob, BlobInDb
 from app.models.bucket import Bucket
@@ -56,7 +56,7 @@ async def test_get_supports_range_and_if_none_match(
     monkeypatch.setattr("app.s3.handlers.object.storage", fake_storage)
 
     async def override_db():
-        return mock_db
+        yield mock_db
 
     app.dependency_overrides[get_database] = override_db
     try:
@@ -86,7 +86,7 @@ async def test_put_acl_subresource_returns_501(mock_db, monkeypatch):
     monkeypatch.setattr("app.s3.handlers.object.crud_get_bucket_by_name", fake_bucket)
 
     async def override_db():
-        return mock_db
+        yield mock_db
 
     app.dependency_overrides[get_database] = override_db
     try:
@@ -101,7 +101,8 @@ async def test_put_acl_subresource_returns_501(mock_db, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_delete_objects_batch(mock_db, fake_storage, monkeypatch):
-    from app.core.config import DATABASE_NAME
+    from app.crud.blob import crud_create_blob
+    from app.models.blob import BlobInCreate
 
     store = {
         "a.txt": BlobInDb(
@@ -122,7 +123,17 @@ async def test_delete_objects_batch(mock_db, fake_storage, monkeypatch):
         ),
     }
     for blob in store.values():
-        await mock_db[DATABASE_NAME]["blobs"].insert_one(blob.model_dump())
+        await crud_create_blob(
+            mock_db,
+            BlobInCreate(
+                path=blob.path,
+                file=blob.file,
+                content_type=blob.content_type,
+                size=blob.size,
+                message_id=blob.message_id,
+            ),
+            blob.bucket_name,
+        )
 
     async def fake_bucket(db, name):
         return _bucket()
@@ -151,7 +162,7 @@ async def test_delete_objects_batch(mock_db, fake_storage, monkeypatch):
     )
 
     async def override_db():
-        return mock_db
+        yield mock_db
 
     body = (
         b"<Delete><Object><Key>a.txt</Key></Object>"

@@ -9,16 +9,15 @@ except RuntimeError:
 import io
 import os
 
-# Config is imported eagerly; set defaults before app modules load.
 os.environ.setdefault("PROJECT_NAME", "telezon-test")
 os.environ.setdefault("PORT", "8000")
 os.environ.setdefault("SECRET_KEY", "test-secret-key")
-os.environ.setdefault("MONGO_HOST", "localhost")
-os.environ.setdefault("MONGO_PORT", "27017")
-os.environ.setdefault("MONGO_USER", "")
-os.environ.setdefault("MONGO_PASSWORD", "")
-os.environ.setdefault("DATABASE_NAME", "telezon_test")
-os.environ.setdefault("DATABASE_URL", "mongodb://localhost:27017")
+os.environ.setdefault("MYSQL_HOST", "localhost")
+os.environ.setdefault("MYSQL_PORT", "3306")
+os.environ.setdefault("MYSQL_USER", "root")
+os.environ.setdefault("MYSQL_PASSWORD", "")
+os.environ.setdefault("MYSQL_DATABASE", "telezon_test")
+os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 os.environ.setdefault("BOT_TOKEN", "0:test")
 os.environ.setdefault("CID", "123")
 os.environ.setdefault("TELEGRAM_API_ID", "1")
@@ -32,9 +31,11 @@ os.environ.setdefault("TG_RATE_BURST", "20")
 os.environ.setdefault("TG_RATE_WAIT_SECONDS", "30")
 
 import pytest
-from mongomock_motor import AsyncMongoMockClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.storage.storage import PutFileResult
+from app.db.tables import Base, BlobRow
+from app.storage.backend import PutFileResult
 
 
 class FakeStorage:
@@ -60,10 +61,35 @@ class FakeStorage:
 
 
 @pytest.fixture
-def mock_db():
-    return AsyncMongoMockClient()
+async def mock_db():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
+        yield session
+    await engine.dispose()
+
+
+async def find_blob_row(session: AsyncSession, bucket_name: str, path: str):
+    result = await session.execute(
+        select(BlobRow).where(
+            BlobRow.bucket_name == bucket_name,
+            BlobRow.path == path,
+        )
+    )
+    return result.scalar_one_or_none()
 
 
 @pytest.fixture
 def fake_storage():
     return FakeStorage()
+
+
+def override_get_database(session):
+    """FastAPI dependency override matching get_database (async generator)."""
+
+    async def _override():
+        yield session
+
+    return _override

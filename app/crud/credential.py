@@ -1,18 +1,18 @@
 import random
 import string
+from datetime import datetime, timezone
 from typing import List, Optional
 
-from bson import ObjectId
-from motor.motor_asyncio import AsyncIOMotorClient
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import DATABASE_NAME
+from app.db.mappers import credential_from_row
+from app.db.tables import CredentialRow
 from app.models.credential import (
     VALID_ROLES,
     CredentialInCreate,
     CredentialInDb,
 )
-
-COLLECTION = "credentials"
 
 
 def _random_key(length: int = 20) -> str:
@@ -21,28 +21,25 @@ def _random_key(length: int = 20) -> str:
 
 
 async def crud_get_credential_by_access_key(
-    db: AsyncIOMotorClient, access_key_id: str
+    db: AsyncSession, access_key_id: str
 ) -> Optional[CredentialInDb]:
-    row = await db[DATABASE_NAME][COLLECTION].find_one(
-        {"access_key_id": access_key_id}
-    )
+    row = await db.get(CredentialRow, access_key_id)
     if not row:
         return None
-    return CredentialInDb(**row)
+    return credential_from_row(row)
 
 
 async def crud_list_credentials_for_owner(
-    db: AsyncIOMotorClient, owner_username: str
+    db: AsyncSession, owner_username: str
 ) -> List[CredentialInDb]:
-    cursor = db[DATABASE_NAME][COLLECTION].find({"owner_username": owner_username})
-    rows: List[CredentialInDb] = []
-    async for row in cursor:
-        rows.append(CredentialInDb(**row))
-    return rows
+    result = await db.execute(
+        select(CredentialRow).where(CredentialRow.owner_username == owner_username)
+    )
+    return [credential_from_row(row) for row in result.scalars().all()]
 
 
 async def crud_create_credential(
-    db: AsyncIOMotorClient,
+    db: AsyncSession,
     owner_username: str,
     payload: CredentialInCreate,
 ) -> CredentialInDb:
@@ -51,6 +48,7 @@ async def crud_create_credential(
         raise ValueError(f"role must be one of {sorted(VALID_ROLES)}")
 
     buckets = [b.strip() for b in payload.buckets if b and b.strip()]
+    now = datetime.now(timezone.utc)
     data = CredentialInDb(
         access_key_id="TZ" + _random_key(18),
         secret_key=_random_key(40),
@@ -58,21 +56,31 @@ async def crud_create_credential(
         role=role,
         buckets=buckets,
         label=(payload.label or "").strip()[:64],
+        created_at=now,
+        updated_at=now,
     )
-    row = await db[DATABASE_NAME][COLLECTION].insert_one(data.model_dump())
-    data.created_at = ObjectId(row.inserted_id).generation_time
-    data.updated_at = data.created_at
-    await db[DATABASE_NAME][COLLECTION].update_one(
-        {"access_key_id": data.access_key_id},
-        {"$set": {"created_at": data.created_at, "updated_at": data.updated_at}},
+    row = CredentialRow(
+        access_key_id=data.access_key_id,
+        secret_key=data.secret_key,
+        owner_username=data.owner_username,
+        role=data.role,
+        buckets=buckets,
+        label=data.label,
+        created_at=now,
+        updated_at=now,
     )
-    return data
+    db.add(row)
+    await db.flush()
+    return credential_from_row(row)
 
 
 async def crud_delete_credential(
-    db: AsyncIOMotorClient, owner_username: str, access_key_id: str
+    db: AsyncSession, owner_username: str, access_key_id: str
 ) -> bool:
-    result = await db[DATABASE_NAME][COLLECTION].delete_one(
-        {"owner_username": owner_username, "access_key_id": access_key_id}
+    result = await db.execute(
+        delete(CredentialRow).where(
+            CredentialRow.owner_username == owner_username,
+            CredentialRow.access_key_id == access_key_id,
+        )
     )
-    return result.deleted_count > 0
+    return (result.rowcount or 0) > 0

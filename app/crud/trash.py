@@ -2,13 +2,14 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
-from motor.motor_asyncio import AsyncIOMotorClient
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import DATABASE_NAME, TRASH_RETENTION_SECONDS
+from app.core.config import TRASH_RETENTION_SECONDS
+from app.db.mappers import parts_to_json, trash_from_row
+from app.db.tables import TrashRow
 from app.models.blob import BlobInDb
 from app.models.trash import TrashItem
-
-COLLECTION = "trash"
 
 
 def _now() -> datetime:
@@ -16,7 +17,7 @@ def _now() -> datetime:
 
 
 async def crud_insert_trash_from_blob(
-    db: AsyncIOMotorClient,
+    db: AsyncSession,
     blob: BlobInDb,
     *,
     deleted_by: str = "",
@@ -46,79 +47,89 @@ async def crud_insert_trash_from_blob(
         created_at=now,
         updated_at=now,
     )
-    await db[DATABASE_NAME][COLLECTION].insert_one(item.model_dump())
+    row = TrashRow(
+        trash_id=item.trash_id,
+        bucket_name=item.bucket_name,
+        path=item.path,
+        file=item.file,
+        content_type=item.content_type,
+        size=item.size,
+        message_id=item.message_id,
+        parts=parts_to_json(item.parts),
+        sse_nonce=item.sse_nonce,
+        sse_tag=item.sse_tag,
+        encrypted=item.encrypted,
+        deleted_at=item.deleted_at,
+        expires_at=item.expires_at,
+        deleted_by=item.deleted_by,
+        reason=item.reason,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(row)
+    await db.flush()
     return item
 
 
-async def crud_get_trash(
-    db: AsyncIOMotorClient, trash_id: str
-) -> Optional[TrashItem]:
-    row = await db[DATABASE_NAME][COLLECTION].find_one({"trash_id": trash_id})
+async def crud_get_trash(db: AsyncSession, trash_id: str) -> Optional[TrashItem]:
+    row = await db.get(TrashRow, trash_id)
     if not row:
         return None
-    return TrashItem(**row)
+    return trash_from_row(row)
 
 
 async def crud_list_trash(
-    db: AsyncIOMotorClient,
+    db: AsyncSession,
     *,
     bucket_name: str = "",
     owner_buckets: List[str] | None = None,
     limit: int = 100,
     offset: int = 0,
 ) -> List[TrashItem]:
-    query: dict = {}
+    stmt = select(TrashRow)
     if bucket_name:
-        query["bucket_name"] = bucket_name
+        stmt = stmt.where(TrashRow.bucket_name == bucket_name)
     elif owner_buckets is not None:
-        query["bucket_name"] = {"$in": owner_buckets}
-
-    cursor = (
-        db[DATABASE_NAME][COLLECTION]
-        .find(query)
-        .sort("deleted_at", -1)
-        .skip(max(0, offset))
+        stmt = stmt.where(TrashRow.bucket_name.in_(owner_buckets))
+    stmt = (
+        stmt.order_by(TrashRow.deleted_at.desc())
+        .offset(max(0, offset))
         .limit(max(1, min(limit, 1000)))
     )
-    rows: List[TrashItem] = []
-    async for row in cursor:
-        rows.append(TrashItem(**row))
-    return rows
+    result = await db.execute(stmt)
+    return [trash_from_row(row) for row in result.scalars().all()]
 
 
 async def crud_delete_trash(
-    db: AsyncIOMotorClient, trash_id: str
+    db: AsyncSession, trash_id: str
 ) -> Optional[TrashItem]:
-    row = await db[DATABASE_NAME][COLLECTION].find_one_and_delete(
-        {"trash_id": trash_id}
-    )
+    row = await db.get(TrashRow, trash_id)
     if not row:
         return None
-    return TrashItem(**row)
+    item = trash_from_row(row)
+    await db.delete(row)
+    await db.flush()
+    return item
 
 
 async def crud_delete_trash_for_bucket(
-    db: AsyncIOMotorClient, bucket_name: str
+    db: AsyncSession, bucket_name: str
 ) -> List[TrashItem]:
-    cursor = db[DATABASE_NAME][COLLECTION].find({"bucket_name": bucket_name})
-    items: List[TrashItem] = []
-    async for row in cursor:
-        items.append(TrashItem(**row))
+    result = await db.execute(
+        select(TrashRow).where(TrashRow.bucket_name == bucket_name)
+    )
+    items = [trash_from_row(row) for row in result.scalars().all()]
     if items:
-        await db[DATABASE_NAME][COLLECTION].delete_many({"bucket_name": bucket_name})
+        await db.execute(delete(TrashRow).where(TrashRow.bucket_name == bucket_name))
+        await db.flush()
     return items
 
 
 async def crud_list_expired_trash(
-    db: AsyncIOMotorClient, *, limit: int = 100
+    db: AsyncSession, *, limit: int = 100
 ) -> List[TrashItem]:
     now = _now()
-    cursor = (
-        db[DATABASE_NAME][COLLECTION]
-        .find({"expires_at": {"$lt": now}})
-        .limit(limit)
+    result = await db.execute(
+        select(TrashRow).where(TrashRow.expires_at < now).limit(limit)
     )
-    rows: List[TrashItem] = []
-    async for row in cursor:
-        rows.append(TrashItem(**row))
-    return rows
+    return [trash_from_row(row) for row in result.scalars().all()]

@@ -7,18 +7,22 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from app.core.config import (
-    DATABASE_NAME,
     GC_INTERVAL_SECONDS,
     GC_MULTIPART_MAX_AGE_SECONDS,
     GC_ORPHAN_SAMPLE_SIZE,
     ENABLE_GC,
     ENABLE_TRASH,
 )
-from app.crud.blob import crud_delete_blob
+from app.crud.blob import crud_delete_blob, crud_sample_blobs
 from app.crud.bucket import crud_get_bucket_by_name
-from app.crud.multipart import crud_delete_multipart_upload, crud_list_parts
+from app.crud.multipart import (
+    crud_delete_multipart_upload,
+    crud_list_parts,
+    crud_list_stale_multipart_uploads,
+)
+from app.crud.share import crud_delete_expired_shares
 from app.crud.trash import crud_delete_trash, crud_list_expired_trash
-from app.db.mongodb import db
+from app.db.session import async_session_factory
 from app.ops.tg_delete import retry_pending_tg_deletes
 from app.s3.object_lifecycle import purge_trash_item
 from app.storage import storage
@@ -57,30 +61,22 @@ def _is_confirmed_object_gone(exc: BaseException) -> bool:
     return any(marker in text for marker in _GONE_MARKERS)
 
 
-async def _sample_dead_blobs(client) -> int:
-    """Drop metadata only when Telegram confirms the file is gone.
-
-    Transient failures (rate limit / client down) and unknown errors must not
-    delete live object metadata.
-    """
+async def _sample_dead_blobs(session) -> int:
     if GC_ORPHAN_SAMPLE_SIZE <= 0:
         return 0
     removed = 0
-    cursor = client[DATABASE_NAME]["blobs"].aggregate(
-        [{"$sample": {"size": GC_ORPHAN_SAMPLE_SIZE}}]
-    )
-    async for row in cursor:
-        file_id = row.get("file")
-        parts = row.get("parts") or []
-        bucket_name = row.get("bucket_name")
-        path = row.get("path")
+    samples = await crud_sample_blobs(session, GC_ORPHAN_SAMPLE_SIZE)
+    for blob in samples:
+        file_id = blob.file
+        parts = blob.parts or []
+        bucket_name = blob.bucket_name
+        path = blob.path
         if not bucket_name or not path:
             continue
         try:
             if parts:
-                # Multipart: probe first part only.
                 first = parts[0]
-                fid = first.get("file_id") if isinstance(first, dict) else None
+                fid = first.file_id if hasattr(first, "file_id") else None
                 if not fid:
                     continue
                 await storage.get_file(fid)
@@ -105,7 +101,7 @@ async def _sample_dead_blobs(client) -> int:
                     exc,
                 )
                 continue
-            await crud_delete_blob(client, bucket_name, path)
+            await crud_delete_blob(session, bucket_name, path)
             removed += 1
             logger.warning(
                 "GC removed dead blob metadata bucket=%s path=%s", bucket_name, path
@@ -113,24 +109,23 @@ async def _sample_dead_blobs(client) -> int:
     return removed
 
 
-async def _purge_expired_trash(client) -> int:
+async def _purge_expired_trash(session) -> int:
     if not ENABLE_TRASH:
         return 0
     purged = 0
-    expired = await crud_list_expired_trash(client, limit=100)
+    expired = await crud_list_expired_trash(session, limit=100)
     for item in expired:
-        bucket = await crud_get_bucket_by_name(client, item.bucket_name)
+        bucket = await crud_get_bucket_by_name(session, item.bucket_name)
         chat_id = getattr(bucket, "telegram_chat_id", None) if bucket else None
-        removed = await crud_delete_trash(client, item.trash_id)
+        removed = await crud_delete_trash(session, item.trash_id)
         if removed:
-            await purge_trash_item(client, removed, chat_id=chat_id)
+            await purge_trash_item(session, removed, chat_id=chat_id)
             purged += 1
     return purged
 
 
 async def run_gc_once() -> dict:
-    client = db.client
-    if client is None:
+    if async_session_factory is None:
         return {
             "multipart_aborted": 0,
             "shares_deleted": 0,
@@ -139,42 +134,44 @@ async def run_gc_once() -> dict:
             "trash_purged": 0,
         }
 
-    now = datetime.now(timezone.utc)
-    multipart_cutoff = now - timedelta(seconds=GC_MULTIPART_MAX_AGE_SECONDS)
-    aborted = 0
-    shares_deleted = 0
+    async with async_session_factory() as session:
+        now = datetime.now(timezone.utc)
+        multipart_cutoff = now - timedelta(seconds=GC_MULTIPART_MAX_AGE_SECONDS)
+        aborted = 0
 
-    cursor = client[DATABASE_NAME]["multipart_uploads"].find(
-        {"initiated_at": {"$lt": multipart_cutoff}}
-    ).limit(100)
-    async for upload in cursor:
-        upload_id = upload.get("upload_id")
-        bucket_name = upload.get("bucket")
-        if not upload_id:
-            continue
-        bucket = (
-            await crud_get_bucket_by_name(client, bucket_name) if bucket_name else None
+        uploads = await crud_list_stale_multipart_uploads(
+            session, multipart_cutoff, limit=100
         )
-        chat_id = getattr(bucket, "telegram_chat_id", None) if bucket else None
-        parts = await crud_list_parts(client, upload_id)
-        for part in parts:
-            if part.get("message_id") is not None:
-                try:
-                    await storage.delete_message(part["message_id"], chat_id=chat_id)
-                except Exception:
-                    logger.exception(
-                        "GC: failed deleting part message %s", part.get("message_id")
-                    )
-        await crud_delete_multipart_upload(client, upload_id)
-        aborted += 1
+        for upload in uploads:
+            upload_id = upload.get("upload_id")
+            bucket_name = upload.get("bucket")
+            if not upload_id:
+                continue
+            bucket = (
+                await crud_get_bucket_by_name(session, bucket_name)
+                if bucket_name
+                else None
+            )
+            chat_id = getattr(bucket, "telegram_chat_id", None) if bucket else None
+            parts = await crud_list_parts(session, upload_id)
+            for part in parts:
+                if part.get("message_id") is not None:
+                    try:
+                        await storage.delete_message(
+                            part["message_id"], chat_id=chat_id
+                        )
+                    except Exception:
+                        logger.exception(
+                            "GC: failed deleting part message %s", part.get("message_id")
+                        )
+            await crud_delete_multipart_upload(session, upload_id)
+            aborted += 1
 
-    result = await client[DATABASE_NAME]["shares"].delete_many(
-        {"expires_at": {"$lt": now}}
-    )
-    shares_deleted = int(result.deleted_count or 0)
-    pending_cleared = await retry_pending_tg_deletes(client, limit=50)
-    dead_blobs = await _sample_dead_blobs(client)
-    trash_purged = await _purge_expired_trash(client)
+        shares_deleted = await crud_delete_expired_shares(session, now)
+        pending_cleared = await retry_pending_tg_deletes(session, limit=50)
+        dead_blobs = await _sample_dead_blobs(session)
+        trash_purged = await _purge_expired_trash(session)
+        await session.commit()
 
     if aborted or shares_deleted or pending_cleared or dead_blobs or trash_purged:
         logger.info(

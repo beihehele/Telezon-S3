@@ -1,8 +1,8 @@
 from typing import Optional
 
 from fastapi import HTTPException
-from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic.networks import EmailStr
+from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.status import HTTP_422_UNPROCESSABLE_ENTITY
 
 from app.crud.bucket import crud_get_bucket_by_name
@@ -10,7 +10,7 @@ from app.crud.user import crud_get_user_by_username, crud_get_user_by_email
 
 
 async def check_free_username_and_email(
-    conn: AsyncIOMotorClient,
+    conn: AsyncSession,
     username: Optional[str] = None,
     email: Optional[EmailStr] = None,
 ):
@@ -30,7 +30,7 @@ async def check_free_username_and_email(
             )
 
 
-async def check_free_bucket_name(db: AsyncIOMotorClient, name: str):
+async def check_free_bucket_name(db: AsyncSession, name: str):
     bucket = await crud_get_bucket_by_name(db, name)
 
     if bucket:

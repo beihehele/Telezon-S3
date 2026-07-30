@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## 0.10.0 — 2026-07-30
+
+MySQL metadata store (breaking: no MongoDB migration; health `database` field). Docker/Linux deploy only.
+
+### Storage
+- Metadata store: **MySQL** (SQLAlchemy async + `aiomysql`); single database, multiple tables; startup `create_all` (no MongoDB).
+- `/api/health` reports `database` instead of `mongodb`.
+- Compose / `.env.example` use MySQL 8.4; optional external MySQL via `DATABASE_URL` (URL-encode passwords; built-in `db` uses `MYSQL_HOST=db` + `MYSQL_*`).
+- Storage ABC module renamed to `app/storage/backend.py` so `from app.storage import storage` resolves to the runtime singleton (fixes GC and blob I/O).
+- User password hashing uses `bcrypt` directly (avoids passlib/bcrypt version skew in tests).
+- Share download: atomic `UPDATE … RETURNING` for download quota; claim before loading object bytes; release quota if blob read fails.
+- List prefix / multipart list: explicit SQL `LIKE` escape for `%` and `_`.
+- Schema: FK `credentials.owner_username` → `users`; `multipart_parts.upload_id` → `multipart_uploads` (CASCADE).
+- Lockfile: run `make lock` (or `python -m uv tool run poetry lock` on Windows) after editing `pyproject.toml`; CI runs `scripts/verify_poetry_lock.py`.
+- **Deploy:** official path is **Docker / Linux** (GHCR image + Compose). Standalone Windows `.exe` (PyInstaller) is **not** supported or shipped from this repo.
+- Removed tracked `docs/superpowers/` from the repository (local-only).
+
 ## 0.9.0 — 2026-07-30
 
 Feature-complete preview: S3-compatible gateway with Telegram (Pyrogram account) storage, REST control plane, and Docker Compose deploy.

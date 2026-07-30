@@ -6,8 +6,9 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from motor.motor_asyncio import AsyncIOMotorClient
 from starlette.requests import Request
+
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud.credential import crud_get_credential_by_access_key
 from app.crud.user import crud_get_user_by_access_key_id
@@ -166,7 +167,7 @@ async def verify_sigv4(
 
 
 async def resolve_identity(
-    db: AsyncIOMotorClient, access_key_id: str
+    db: AsyncSession, access_key_id: str
 ) -> AccessIdentity | None:
     user = await crud_get_user_by_access_key_id(db, access_key_id)
     if user:
@@ -194,7 +195,7 @@ async def resolve_identity(
 
 
 async def resolve_verified_identity(
-    db: AsyncIOMotorClient,
+    db: AsyncSession,
     request: Request,
     *,
     body: bytes | None = None,
@@ -225,7 +226,7 @@ def _method_allowed(identity: AccessIdentity, request: Request, bucket: Bucket) 
 async def authorize_request_for_bucket(
     bucket: Bucket,
     request: Request,
-    db: AsyncIOMotorClient | None = None,
+    db: AsyncSession | None = None,
     *,
     body: bytes | None = None,
 ) -> str:
@@ -271,7 +272,7 @@ async def authorize_request_for_bucket(
 async def precheck_request_for_bucket(
     bucket: Bucket,
     request: Request,
-    db: AsyncIOMotorClient | None = None,
+    db: AsyncSession | None = None,
 ) -> str:
     """Identity + RBAC only (no payload signature).
 
@@ -312,7 +313,7 @@ async def precheck_request_for_bucket(
 async def verify_request_for_bucket(
     bucket: Bucket,
     request: Request,
-    db: AsyncIOMotorClient | None = None,
+    db: AsyncSession | None = None,
     *,
     body: bytes | None = None,
 ) -> bool:
@@ -352,7 +353,7 @@ def auth_error_response(auth_code: str, resource: str):
 
 
 async def resolve_user_from_request(
-    db: AsyncIOMotorClient, request: Request, *, body: bytes | None = None
+    db: AsyncSession, request: Request, *, body: bytes | None = None
 ) -> UserInDb | None:
     identity = await resolve_verified_identity(db, request, body=body)
     if not identity:
@@ -366,7 +367,7 @@ async def resolve_user_from_request(
 
 
 async def resolve_identity_from_request(
-    db: AsyncIOMotorClient, request: Request, *, body: bytes | None = None
+    db: AsyncSession, request: Request, *, body: bytes | None = None
 ) -> AccessIdentity | None:
     return await resolve_verified_identity(db, request, body=body)
 

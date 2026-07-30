@@ -2,17 +2,27 @@
 
 services:
   db:
-    image: mongo:latest
+    image: mysql:8.4
     ports:
-      - 27017:27017
+      - "127.0.0.1:3306:3306"
     env_file:
       - .env
     environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-${MYSQL_PASSWORD}}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-TelezonS3}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mysqladmin ping -h 127.0.0.1 -u$$MYSQL_USER -p$$MYSQL_PASSWORD || exit 1",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
   app:
-    # Prefer published image when IMAGE_TAG is set, otherwise build locally.
-    # Example: IMAGE_TAG=latest docker compose up -d
     image: ghcr.io/beihehele/telezon-s3:${IMAGE_TAG:-latest}
     build:
       context: .
@@ -22,6 +32,7 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: mongodb://${MONGO_USER}:${MONGO_PASSWORD}@db:27017
+      MYSQL_HOST: db
     depends_on:
-      - db
+      db:
+        condition: service_healthy

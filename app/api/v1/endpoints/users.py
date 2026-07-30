@@ -1,7 +1,7 @@
+from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
-from motor.motor_asyncio import AsyncIOMotorClient
 from starlette.status import HTTP_404_NOT_FOUND
 
 from app.api.auth.utils import check_role_admin
@@ -16,7 +16,7 @@ from app.crud.user import (
     crud_get_user_by_username,
     crud_update_user,
 )
-from app.db.mongodb import get_database
+from app.db.session import get_database
 from app.models.bucket import BucketInCreate
 from app.models.user import User, UserFilterParams, UserInCreate, UserInUpdate
 
@@ -29,7 +29,7 @@ async def get_all_users(
     email: str = "",
     limit: int = Query(20),
     offset: int = Query(0),
-    db: AsyncIOMotorClient = Depends(get_database),
+    db: AsyncSession = Depends(get_database),
     current_user: User = Depends(get_current_user),
 ):
     check_role_admin(current_user)
@@ -44,7 +44,7 @@ async def get_all_users(
 @router.get("/{username}", response_model=User)
 async def get_user(
     username: str,
-    db: AsyncIOMotorClient = Depends(get_database),
+    db: AsyncSession = Depends(get_database),
     current_user: User = Depends(get_current_user),
 ):
     check_role_admin(current_user)
@@ -62,7 +62,7 @@ async def get_user(
 @router.post("/", response_model=User)
 async def create_user(
     user: UserInCreate = Body(...),
-    db: AsyncIOMotorClient = Depends(get_database),
+    db: AsyncSession = Depends(get_database),
     current_user: User = Depends(get_current_user),
 ):
     check_role_admin(current_user)
@@ -100,7 +100,7 @@ async def create_user(
 async def update_user(
     username: str,
     user: UserInUpdate = Body(...),
-    db: AsyncIOMotorClient = Depends(get_database),
+    db: AsyncSession = Depends(get_database),
     current_user: User = Depends(get_current_user),
 ):
     check_role_admin(current_user)
@@ -114,7 +114,7 @@ async def update_user(
 @router.delete("/{username}")
 async def delete_user(
     username: str,
-    db: AsyncIOMotorClient = Depends(get_database),
+    db: AsyncSession = Depends(get_database),
     current_user: User = Depends(get_current_user),
 ):
     check_role_admin(current_user)

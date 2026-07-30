@@ -1,130 +1,129 @@
 from datetime import datetime, timezone
 from typing import List
 
-from bson import ObjectId
-from motor.motor_asyncio import AsyncIOMotorClient
+from sqlalchemy import and_, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import DATABASE_NAME
+from app.db.mappers import blob_from_row, blob_in_db_from_row, parts_to_json
+from app.db.sql_like import escape_like_prefix
+from app.db.tables import BlobRow, BucketRow, UserRow
 from app.models.blob import Blob, BlobFilterParams, BlobInCreate, BlobInDb
-
-COLLECTION = "blobs"
-
-aggregate_bucket = {
-    "$lookup": {
-        "from": "buckets",
-        "localField": "bucket_name",
-        "foreignField": "name",
-        "as": "bucket",
-    }
-}
-
-aggregate_owner = {
-    "$lookup": {
-        "from": "users",
-        "localField": "bucket.owner_username",
-        "foreignField": "username",
-        "as": "owner",
-    }
-}
 
 
 async def crud_get_all_blobs(
-    db: AsyncIOMotorClient, filters: BlobFilterParams
+    db: AsyncSession, filters: BlobFilterParams
 ) -> List[Blob]:
-    blobs: List[Blob] = []
-    base_query = {}
-
+    stmt = (
+        select(BlobRow, BucketRow, UserRow)
+        .join(BucketRow, BlobRow.bucket_name == BucketRow.name)
+        .join(UserRow, BucketRow.owner_username == UserRow.username)
+    )
     if filters.path:
         paths = filters.path.replace(", ", ",").split(",")
-        base_query["path"] = {"$in": paths}
-
+        stmt = stmt.where(BlobRow.path.in_(paths))
     if filters.bucket_name:
         bucket_names = filters.bucket_name.replace(", ", ",").split(",")
-        base_query["bucket_name"] = {"$in": bucket_names}
-
-    blob_docs = db[DATABASE_NAME][COLLECTION].aggregate(
-        [
-            {"$match": base_query},
-            {"$limit": filters.offset + filters.limit},
-            {"$skip": filters.offset},
-            aggregate_bucket,
-            aggregate_owner,
-            {"$unwind": {"path": "$bucket"}},
-            {"$unwind": {"path": "$owner"}},
-        ]
-    )
-
-    async for row in blob_docs:
-        blobs.append(Blob(**row))
-
+        stmt = stmt.where(BlobRow.bucket_name.in_(bucket_names))
+    stmt = stmt.offset(filters.offset).limit(filters.limit)
+    result = await db.execute(stmt)
+    blobs: List[Blob] = []
+    for blob_row, bucket_row, owner_row in result.all():
+        blobs.append(blob_from_row(blob_row, bucket_row, owner_row))
     return blobs
 
 
 async def crud_create_blob(
-    db: AsyncIOMotorClient, blob: BlobInCreate, bucket_name: str, update: bool = False
+    db: AsyncSession, blob: BlobInCreate, bucket_name: str, update: bool = False
 ) -> BlobInDb:
     data_blob = BlobInDb(**blob.model_dump())
     data_blob.bucket_name = bucket_name
+    now = datetime.now(timezone.utc)
 
     if not update:
-        row = await db[DATABASE_NAME][COLLECTION].insert_one(data_blob.model_dump())
-
-        data_blob.created_at = ObjectId(row.inserted_id).generation_time
-        data_blob.updated_at = ObjectId(row.inserted_id).generation_time
-    else:
-        now = datetime.now(timezone.utc)
-        data_blob.updated_at = now
-        await db[DATABASE_NAME][COLLECTION].update_one(
-            {"path": data_blob.path, "bucket_name": bucket_name},
-            {"$set": data_blob.model_dump()},
+        row = BlobRow(
+            bucket_name=bucket_name,
+            path=data_blob.path,
+            file=data_blob.file or "",
+            content_type=data_blob.content_type or "",
+            size=int(data_blob.size or 0),
+            message_id=data_blob.message_id,
+            parts=parts_to_json(data_blob.parts),
+            sse_nonce=data_blob.sse_nonce,
+            sse_tag=data_blob.sse_tag,
+            encrypted=bool(data_blob.encrypted),
+            created_at=now,
+            updated_at=now,
         )
+        db.add(row)
+        await db.flush()
+        data_blob.created_at = row.created_at
+        data_blob.updated_at = row.updated_at
+    else:
+        data_blob.updated_at = now
+        result = await db.execute(
+            select(BlobRow).where(
+                BlobRow.path == data_blob.path,
+                BlobRow.bucket_name == bucket_name,
+            )
+        )
+        row = result.scalar_one()
+        row.file = data_blob.file or ""
+        row.content_type = data_blob.content_type or ""
+        row.size = int(data_blob.size or 0)
+        row.message_id = data_blob.message_id
+        row.parts = parts_to_json(data_blob.parts)
+        row.sse_nonce = data_blob.sse_nonce
+        row.sse_tag = data_blob.sse_tag
+        row.encrypted = bool(data_blob.encrypted)
+        row.updated_at = now
+        await db.flush()
 
     return data_blob
 
 
 async def crud_delete_blob(
-    db: AsyncIOMotorClient, bucket_name: str, path: str
+    db: AsyncSession, bucket_name: str, path: str
 ) -> BlobInDb | None:
-    row = await db[DATABASE_NAME][COLLECTION].find_one_and_delete(
-        {"bucket_name": bucket_name, "path": path}
+    result = await db.execute(
+        select(BlobRow).where(
+            BlobRow.bucket_name == bucket_name,
+            BlobRow.path == path,
+        )
     )
+    row = result.scalar_one_or_none()
     if not row:
         return None
-    return BlobInDb(**row)
+    doc = blob_in_db_from_row(row)
+    await db.delete(row)
+    await db.flush()
+    return doc
 
 
 async def crud_list_blobs_for_s3(
-    db: AsyncIOMotorClient,
+    db: AsyncSession,
     bucket_name: str,
     prefix: str = "",
     start_after: str = "",
     max_keys: int = 1000,
 ) -> List[BlobInDb]:
-    query: dict = {"bucket_name": bucket_name}
-    path_query: dict = {}
-
+    stmt = select(BlobRow).where(BlobRow.bucket_name == bucket_name)
     if prefix:
-        path_query["$regex"] = f"^{_escape_regex(prefix)}"
-
+        stmt = stmt.where(
+            BlobRow.path.like(f"{escape_like_prefix(prefix)}%", escape="\\")
+        )
     if start_after:
-        path_query["$gt"] = start_after
-
-    if path_query:
-        query["path"] = path_query
-
-    cursor = (
-        db[DATABASE_NAME][COLLECTION]
-        .find(query)
-        .sort("path", 1)
-        .limit(max_keys)
-    )
-
-    blobs: List[BlobInDb] = []
-    async for row in cursor:
-        blobs.append(BlobInDb(**row))
-    return blobs
+        stmt = stmt.where(BlobRow.path > start_after)
+    stmt = stmt.order_by(BlobRow.path.asc()).limit(max_keys)
+    result = await db.execute(stmt)
+    return [blob_in_db_from_row(row) for row in result.scalars().all()]
 
 
-def _escape_regex(value: str) -> str:
-    specials = r"\.^$|*+?()[]{}\\"
-    return "".join("\\" + ch if ch in specials else ch for ch in value)
+async def crud_sample_blobs(db: AsyncSession, limit: int) -> List[BlobInDb]:
+    if limit <= 0:
+        return []
+    bind = db.get_bind()
+    dialect = bind.dialect.name if bind is not None else "mysql"
+    order = func.rand() if dialect == "mysql" else func.random()
+    stmt = select(BlobRow).order_by(order).limit(limit)
+    result = await db.execute(stmt)
+    return [blob_in_db_from_row(row) for row in result.scalars().all()]

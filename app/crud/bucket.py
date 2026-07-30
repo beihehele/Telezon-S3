@@ -1,12 +1,14 @@
+from datetime import datetime, timezone
 from typing import List, Optional
 
-from bson import ObjectId
 from fastapi import HTTPException
-from motor.motor_asyncio import AsyncIOMotorClient
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.status import HTTP_404_NOT_FOUND
 
-from app.core.config import DATABASE_NAME
 from app.crud.user import crud_get_user_by_username
+from app.db.mappers import bucket_from_rows, bucket_in_db_from_row
+from app.db.tables import BlobRow, BucketRow, UserRow
 from app.models.bucket import (
     Bucket,
     BucketFilterParams,
@@ -16,119 +18,87 @@ from app.models.bucket import (
 )
 from app.models.user import User
 
-COLLECTION = "buckets"
 
-aggregate_owner = {
-    "$lookup": {
-        "from": "users",
-        "localField": "owner_username",
-        "foreignField": "username",
-        "as": "owner",
-    },
-}
-
-project = {
-    "$project": {
-        "name": 1,
-        "owner": 1,
-        "created_at": 1,
-        "updated_at": 1,
-        "is_public": {"$ifNull": ["$is_public", False]},
-        "telegram_chat_id": 1,
-        "telegram_topic_id": 1,
-    }
-}
-
-
-async def _bucket_total_size(db: AsyncIOMotorClient, bucket_name: str) -> int:
-    """Sum object sizes without embedding blob documents on the bucket row."""
-    cursor = db[DATABASE_NAME]["blobs"].aggregate(
-        [
-            {"$match": {"bucket_name": bucket_name}},
-            {"$group": {"_id": None, "total": {"$sum": {"$ifNull": ["$size", 0]}}}},
-        ]
+async def _bucket_total_size(db: AsyncSession, bucket_name: str) -> int:
+    result = await db.execute(
+        select(func.coalesce(func.sum(BlobRow.size), 0)).where(
+            BlobRow.bucket_name == bucket_name
+        )
     )
-    async for row in cursor:
-        return int(row.get("total") or 0)
-    return 0
+    total = result.scalar_one()
+    return int(total or 0)
+
+
+async def _load_bucket_with_owner(
+    db: AsyncSession, bucket_row: BucketRow
+) -> Bucket:
+    owner = await db.get(UserRow, bucket_row.owner_username)
+    if not owner:
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND,
+            detail=f"Owner {bucket_row.owner_username} not found",
+        )
+    size = await _bucket_total_size(db, bucket_row.name)
+    return bucket_from_rows(bucket_row, owner, size)
 
 
 async def crud_get_all_buckets(
-    db: AsyncIOMotorClient, filters: BucketFilterParams
+    db: AsyncSession, filters: BucketFilterParams
 ) -> List[Bucket]:
-    buckets: List[Bucket] = []
-    base_query = {}
-
+    stmt = select(BucketRow)
     if filters.name:
         names = filters.name.replace(", ", ",").split(",")
-        base_query["name"] = {"$in": names}
-
+        stmt = stmt.where(BucketRow.name.in_(names))
     if filters.owner_username:
         owners = filters.owner_username.replace(", ", ",").split(",")
-        base_query["owner_username"] = {"$in": owners}
-
-    bucket_docs = db[DATABASE_NAME][COLLECTION].aggregate(
-        [
-            {"$match": base_query},
-            {"$limit": filters.offset + filters.limit},
-            {"$skip": filters.offset},
-            aggregate_owner,
-            {"$unwind": {"path": "$owner"}},
-            project,
-        ]
-    )
-
-    async for row in bucket_docs:
-        size = await _bucket_total_size(db, row["name"])
-        buckets.append(Bucket(**{**row, "size": size}))
-
+        stmt = stmt.where(BucketRow.owner_username.in_(owners))
+    stmt = stmt.offset(filters.offset).limit(filters.limit)
+    result = await db.execute(stmt)
+    buckets: List[Bucket] = []
+    for bucket_row in result.scalars().all():
+        buckets.append(await _load_bucket_with_owner(db, bucket_row))
     return buckets
 
 
 async def crud_get_bucket_by_name(
-    db: AsyncIOMotorClient, name: str
+    db: AsyncSession, name: str
 ) -> Optional[Bucket]:
-    base_query = {"name": {"$in": [name]}}
-    bucket_docs = db[DATABASE_NAME][COLLECTION].aggregate(
-        [
-            {"$match": base_query},
-            aggregate_owner,
-            {"$unwind": {"path": "$owner"}},
-            project,
-        ]
-    )
-
-    async for row in bucket_docs:
-        size = await _bucket_total_size(db, name)
-        return Bucket(**{**row, "size": size})
-    return None
+    row = await db.get(BucketRow, name)
+    if not row:
+        return None
+    return await _load_bucket_with_owner(db, row)
 
 
 async def crud_create_bucket(
-    db: AsyncIOMotorClient, bucket: BucketInCreate, current_user: User
+    db: AsyncSession, bucket: BucketInCreate, current_user: User
 ) -> BucketInDb:
     data_bucket = BucketInDb(**bucket.model_dump())
     data_bucket.owner_username = bucket.owner_username or current_user.username
 
-    row = await db[DATABASE_NAME][COLLECTION].insert_one(data_bucket.model_dump())
-
-    data_bucket.created_at = ObjectId(row.inserted_id).generation_time
-    data_bucket.updated_at = ObjectId(row.inserted_id).generation_time
-
-    return data_bucket
+    now = datetime.now(timezone.utc)
+    row = BucketRow(
+        name=data_bucket.name,
+        owner_username=data_bucket.owner_username,
+        is_public=data_bucket.is_public,
+        telegram_chat_id=data_bucket.telegram_chat_id,
+        telegram_topic_id=data_bucket.telegram_topic_id,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(row)
+    await db.flush()
+    return bucket_in_db_from_row(row)
 
 
 async def crud_update_bucket(
-    db: AsyncIOMotorClient, bucket_name: str, bucket: BucketInUpdate
+    db: AsyncSession, bucket_name: str, bucket: BucketInUpdate
 ) -> BucketInDb:
-    simple_bucket = await crud_get_bucket_by_name(db, bucket_name)
-    if not simple_bucket:
+    row = await db.get(BucketRow, bucket_name)
+    if not row:
         raise HTTPException(
             status_code=HTTP_404_NOT_FOUND,
             detail=f"Bucket {bucket_name} not found",
         )
-
-    updates: dict = {}
 
     if bucket.owner_username is not None:
         user_bucket = await crud_get_user_by_username(db, bucket.owner_username)
@@ -137,21 +107,19 @@ async def crud_update_bucket(
                 status_code=HTTP_404_NOT_FOUND,
                 detail=f"Username {bucket.owner_username} not found",
             )
-        updates["owner_username"] = bucket.owner_username
+        row.owner_username = bucket.owner_username
 
     if bucket.is_public is not None:
-        updates["is_public"] = bucket.is_public
+        row.is_public = bucket.is_public
 
     if "telegram_chat_id" in bucket.model_fields_set:
-        updates["telegram_chat_id"] = bucket.telegram_chat_id or None
+        row.telegram_chat_id = bucket.telegram_chat_id or None
 
     if "telegram_topic_id" in bucket.model_fields_set:
-        updates["telegram_topic_id"] = bucket.telegram_topic_id
+        row.telegram_topic_id = bucket.telegram_topic_id
 
-    if updates:
-        await db[DATABASE_NAME][COLLECTION].update_one(
-            {"name": bucket_name}, {"$set": updates}
-        )
+    row.updated_at = datetime.now(timezone.utc)
+    await db.flush()
 
     refreshed = await crud_get_bucket_by_name(db, bucket_name)
     if not refreshed:
@@ -170,13 +138,17 @@ async def crud_update_bucket(
     )
 
 
-async def crud_delete_bucket(db: AsyncIOMotorClient, bucket_name: str) -> bool:
-    result = await db[DATABASE_NAME][COLLECTION].delete_one({"name": bucket_name})
-    return result.deleted_count > 0
+async def crud_delete_bucket(db: AsyncSession, bucket_name: str) -> bool:
+    row = await db.get(BucketRow, bucket_name)
+    if not row:
+        return False
+    await db.delete(row)
+    await db.flush()
+    return True
 
 
-async def crud_bucket_has_objects(db: AsyncIOMotorClient, bucket_name: str) -> bool:
-    row = await db[DATABASE_NAME]["blobs"].find_one(
-        {"bucket_name": bucket_name}, projection={"_id": 1}
+async def crud_bucket_has_objects(db: AsyncSession, bucket_name: str) -> bool:
+    result = await db.execute(
+        select(BlobRow.id).where(BlobRow.bucket_name == bucket_name).limit(1)
     )
-    return row is not None
+    return result.scalar_one_or_none() is not None

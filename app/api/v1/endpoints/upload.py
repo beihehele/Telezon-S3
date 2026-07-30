@@ -1,7 +1,7 @@
+from sqlalchemy.ext.asyncio import AsyncSession
 """Simple Bearer upload for scripts/Shortcuts (non-SigV4)."""
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field
 from starlette.responses import JSONResponse
 
@@ -9,7 +9,7 @@ from app.core.config import MAX_UPLOAD_BYTES
 from app.crud.blob import crud_create_blob, crud_get_all_blobs
 from app.crud.bucket import crud_get_bucket_by_name
 from app.crud.user import crud_get_user_by_access_key_id
-from app.db.mongodb import get_database
+from app.db.session import get_database
 from app.models.blob import BlobFilterParams, BlobInCreate
 from app.s3.body import BodyTooLarge, read_body_capped
 from app.storage import storage
@@ -45,7 +45,7 @@ async def simple_upload(
     bucket: str,
     key: str,
     authorization: str | None = Header(default=None),
-    db: AsyncIOMotorClient = Depends(get_database),
+    db: AsyncSession = Depends(get_database),
 ):
     user = await _user_from_bearer(authorization, db)
     bucket_row = await crud_get_bucket_by_name(db, bucket)

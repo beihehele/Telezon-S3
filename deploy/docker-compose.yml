@@ -11,24 +11,29 @@
 
 services:
   db:
-    image: mongo:latest
+    image: mysql:8.4
     restart: unless-stopped
     env_file:
       - .env
     environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-${MYSQL_PASSWORD}}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-TelezonS3}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     volumes:
-      - mongo_data:/data/db
-    # Bind to loopback only; remove this ports section if the app uses external Mongo.
+      - mysql_data:/var/lib/mysql
     ports:
-      - "127.0.0.1:27017:27017"
+      - "127.0.0.1:3306:3306"
     healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      test:
+        [
+          "CMD-SHELL",
+          "mysqladmin ping -h 127.0.0.1 -u$$MYSQL_USER -p$$MYSQL_PASSWORD || exit 1",
+        ]
       interval: 5s
       timeout: 5s
-      retries: 10
-      start_period: 15s
+      retries: 15
+      start_period: 30s
 
   app:
     image: ghcr.io/beihehele/telezon-s3:${IMAGE_TAG:-latest}
@@ -38,7 +43,7 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: mongodb://${MONGO_USER}:${MONGO_PASSWORD}@db:27017
+      MYSQL_HOST: db
       PORT: "8000"
     depends_on:
       db:
@@ -64,4 +69,4 @@ services:
     entrypoint: ["python", "setup_account_storage.py"]
 
 volumes:
-  mongo_data:
+  mysql_data:

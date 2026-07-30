@@ -1,13 +1,15 @@
 import random
 import string
+from datetime import datetime, timezone
 from typing import List
 
-from bson import ObjectId
 from fastapi.exceptions import HTTPException
-from motor.motor_asyncio import AsyncIOMotorClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.status import HTTP_404_NOT_FOUND
 
-from app.core.config import DATABASE_NAME
+from app.db.mappers import user_from_row
+from app.db.tables import UserRow
 from app.models.user import (
     ADMIN_ROLE,
     USER_ROLE,
@@ -17,58 +19,51 @@ from app.models.user import (
     UserInUpdate,
 )
 
-COLLECTION = "users"
-
 
 async def crud_get_all_users(
-    db: AsyncIOMotorClient, filters: UserFilterParams
+    db: AsyncSession, filters: UserFilterParams
 ) -> List[UserInDb]:
-    users: List[UserInDb] = []
-    base_query = {}
-
+    stmt = select(UserRow)
     if filters.username:
-        user_names = filters.username.replace(", ", ",").split(",")
-        base_query["username"] = {"$in": user_names}
-
+        names = filters.username.replace(", ", ",").split(",")
+        stmt = stmt.where(UserRow.username.in_(names))
     if filters.email:
         emails = filters.email.replace(", ", ",").split(",")
-        base_query["email"] = {"$in": emails}
-
-    user_docs = db[DATABASE_NAME][COLLECTION].find(
-        base_query, limit=filters.limit, skip=filters.offset
-    )
-
-    async for row in user_docs:
-        users.append(UserInDb(**row))
-
-    return users
+        stmt = stmt.where(UserRow.email.in_(emails))
+    stmt = stmt.offset(filters.offset).limit(filters.limit)
+    result = await db.execute(stmt)
+    return [user_from_row(row) for row in result.scalars().all()]
 
 
-async def crud_get_user_by_username(db: AsyncIOMotorClient, username: str) -> UserInDb:
-    row = await db[DATABASE_NAME][COLLECTION].find_one({"username": username})
-
+async def crud_get_user_by_username(db: AsyncSession, username: str) -> UserInDb | None:
+    row = await db.get(UserRow, username)
     if row:
-        return UserInDb(**row)
+        return user_from_row(row)
+    return None
 
 
-async def crud_get_user_by_email(db: AsyncIOMotorClient, email: str) -> UserInDb:
-    row = await db[DATABASE_NAME][COLLECTION].find_one({"email": email})
-
+async def crud_get_user_by_email(db: AsyncSession, email: str) -> UserInDb | None:
+    result = await db.execute(select(UserRow).where(UserRow.email == email))
+    row = result.scalar_one_or_none()
     if row:
-        return UserInDb(**row)
+        return user_from_row(row)
+    return None
 
 
 async def crud_get_user_by_access_key_id(
-    db: AsyncIOMotorClient, access_key_id: str
-) -> UserInDb:
-    row = await db[DATABASE_NAME][COLLECTION].find_one({"access_key_id": access_key_id})
-
+    db: AsyncSession, access_key_id: str
+) -> UserInDb | None:
+    result = await db.execute(
+        select(UserRow).where(UserRow.access_key_id == access_key_id)
+    )
+    row = result.scalar_one_or_none()
     if row:
-        return UserInDb(**row)
+        return user_from_row(row)
+    return None
 
 
 async def crud_create_user(
-    db: AsyncIOMotorClient, user: UserInCreate, admin=False
+    db: AsyncSession, user: UserInCreate, admin=False
 ) -> UserInDb:
     data_user = UserInDb(**user.model_dump())
     if admin:
@@ -88,26 +83,38 @@ async def crud_create_user(
             random.choice(string.ascii_letters + string.digits) for _ in range(16)
         )
 
-    row = await db[DATABASE_NAME][COLLECTION].insert_one(data_user.model_dump())
+    now = datetime.now(timezone.utc)
+    data_user.created_at = now
+    data_user.updated_at = now
 
-    data_user.created_at = ObjectId(row.inserted_id).generation_time
-    data_user.updated_at = ObjectId(row.inserted_id).generation_time
-
-    return UserInDb(**data_user.model_dump())
+    row = UserRow(
+        username=data_user.username,
+        email=str(data_user.email),
+        description=data_user.description or "",
+        role=data_user.role,
+        access_key_id=data_user.access_key_id,
+        secret_key=data_user.secret_key,
+        salt=data_user.salt,
+        hashed_password=data_user.hashed_password,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(row)
+    await db.flush()
+    return user_from_row(row)
 
 
 async def crud_update_user(
-    db: AsyncIOMotorClient, username: str, user: UserInUpdate
+    db: AsyncSession, username: str, user: UserInUpdate
 ) -> UserInDb:
-    simple_user = await crud_get_user_by_username(db, username)
-    data_user = UserInDb(**simple_user.model_dump())
-
-    if not data_user:
+    row = await db.get(UserRow, username)
+    if not row:
         raise HTTPException(
             status_code=HTTP_404_NOT_FOUND,
             detail=f"Username {username} not found",
         )
 
+    data_user = user_from_row(row)
     data_user.email = user.email or data_user.email
     data_user.description = user.description or data_user.description
     data_user.role = user.role or data_user.role
@@ -115,12 +122,18 @@ async def crud_update_user(
     if user.password:
         data_user.change_password(user.password)
 
-    await db[DATABASE_NAME][COLLECTION].update_one(
-        {"username": data_user.username}, {"$set": data_user.model_dump()}
-    )
+    row.email = str(data_user.email)
+    row.description = data_user.description or ""
+    row.role = data_user.role
+    row.salt = data_user.salt
+    row.hashed_password = data_user.hashed_password
+    row.updated_at = datetime.now(timezone.utc)
+    await db.flush()
+    return user_from_row(row)
 
-    return UserInDb(**data_user.model_dump())
 
-
-async def crud_delete_user(db: AsyncIOMotorClient, username: str):
-    await db[DATABASE_NAME][COLLECTION].delete_one({"username": username})
+async def crud_delete_user(db: AsyncSession, username: str) -> None:
+    row = await db.get(UserRow, username)
+    if row:
+        await db.delete(row)
+        await db.flush()

@@ -1,5 +1,5 @@
+from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import APIRouter, Depends, HTTPException, Request
-from motor.motor_asyncio import AsyncIOMotorClient
 from starlette.responses import Response
 from starlette.status import HTTP_403_FORBIDDEN, HTTP_404_NOT_FOUND
 
@@ -13,6 +13,7 @@ from app.crud.share import (
     crud_create_share,
     crud_delete_share,
     crud_get_share,
+    crud_release_share_download,
     share_is_usable,
     share_password_ok,
 )
@@ -21,7 +22,7 @@ from app.crud.share_lockout import (
     share_is_locked,
     share_record_password_failure,
 )
-from app.db.mongodb import get_database
+from app.db.session import get_database
 from app.models.blob import BlobFilterParams
 from app.models.share import ShareInCreate, SharePublic
 from app.models.user import User
@@ -33,7 +34,7 @@ router = APIRouter(prefix="/shares", tags=["Shares"])
 @router.post("/", response_model=SharePublic)
 async def create_share(
     payload: ShareInCreate,
-    db: AsyncIOMotorClient = Depends(get_database),
+    db: AsyncSession = Depends(get_database),
     current_user: User = Depends(get_current_user),
 ):
     bucket = await crud_get_bucket_by_name(db, payload.bucket)
@@ -80,7 +81,7 @@ async def create_share(
 @router.delete("/{token}")
 async def revoke_share(
     token: str,
-    db: AsyncIOMotorClient = Depends(get_database),
+    db: AsyncSession = Depends(get_database),
     current_user: User = Depends(get_current_user),
 ):
     share = await crud_get_share(db, token)
@@ -99,7 +100,7 @@ share_public_router = APIRouter(tags=["ShareDownload"])
 async def download_share(
     token: str,
     request: Request,
-    db: AsyncIOMotorClient = Depends(get_database),
+    db: AsyncSession = Depends(get_database),
 ):
     share = await crud_get_share(db, token)
     if not share or not share_is_usable(share):
@@ -130,39 +131,45 @@ async def download_share(
 
     await share_clear_password_failures(db, token, client_ip)
 
-    blobs = await crud_get_all_blobs(
-        db, BlobFilterParams(path=share.key, bucket_name=share.bucket)
-    )
-    if not blobs:
-        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Object not found")
-
-    blob = blobs[0]
-    if blob.encrypted:
-        raise HTTPException(
-            status_code=400,
-            detail="Encrypted object cannot be downloaded via share link",
-        )
-
-    blob_size = int(getattr(blob, "size", 0) or 0)
-    if blob_size > MAX_UPLOAD_BYTES:
-        raise HTTPException(
-            status_code=413,
-            detail=(
-                f"Share download loads the object into memory and is limited to "
-                f"{MAX_UPLOAD_BYTES} bytes; use a presigned GET for larger objects"
-            ),
-        )
-
-    try:
-        data = await load_blob_bytes(blob)
-    except Exception:
-        raise HTTPException(
-            status_code=HTTP_404_NOT_FOUND, detail="Object not available"
-        ) from None
-
     claimed = await crud_claim_share_download(db, token)
     if not claimed:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Share not found")
+
+    try:
+        blobs = await crud_get_all_blobs(
+            db, BlobFilterParams(path=share.key, bucket_name=share.bucket)
+        )
+        if not blobs:
+            raise HTTPException(
+                status_code=HTTP_404_NOT_FOUND, detail="Object not found"
+            )
+
+        blob = blobs[0]
+        if blob.encrypted:
+            raise HTTPException(
+                status_code=400,
+                detail="Encrypted object cannot be downloaded via share link",
+            )
+
+        blob_size = int(getattr(blob, "size", 0) or 0)
+        if blob_size > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=(
+                    f"Share download loads the object into memory and is limited to "
+                    f"{MAX_UPLOAD_BYTES} bytes; use a presigned GET for larger objects"
+                ),
+            )
+
+        data = await load_blob_bytes(blob)
+    except HTTPException:
+        await crud_release_share_download(db, token)
+        raise
+    except Exception:
+        await crud_release_share_download(db, token)
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND, detail="Object not available"
+        ) from None
 
     return Response(
         content=data,

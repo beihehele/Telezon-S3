@@ -1,12 +1,12 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.db.mongodb import get_database
+from app.db.session import get_database
 from app.main import app
 from app.models.blob import Blob, BlobInDb
 from app.models.bucket import Bucket
 from app.models.user import User
-from app.storage.storage import PutFileResult
+from app.storage.backend import PutFileResult
 
 
 def _owner():
@@ -87,7 +87,7 @@ async def test_copy_object(mock_db, fake_storage, monkeypatch):
     monkeypatch.setattr("app.s3.handlers.object.precheck_request_for_bucket", fake_verify)
 
     async def override_db():
-        return mock_db
+        yield mock_db
 
     app.dependency_overrides[get_database] = override_db
     try:
@@ -159,7 +159,7 @@ async def test_copy_object_rejects_oversized(mock_db, fake_storage, monkeypatch)
     monkeypatch.setattr("app.s3.handlers.object.precheck_request_for_bucket", fake_verify)
 
     async def override_db():
-        return mock_db
+        yield mock_db
 
     app.dependency_overrides[get_database] = override_db
     try:
@@ -225,7 +225,7 @@ async def test_copy_object_denies_source_outside_scoped_buckets(mock_db, monkeyp
     monkeypatch.setattr("app.s3.handlers.object.precheck_request_for_bucket", fake_verify)
 
     async def override_db():
-        return mock_db
+        yield mock_db
 
     app.dependency_overrides[get_database] = override_db
     try:
@@ -310,7 +310,7 @@ async def test_head_create_delete_bucket(mock_db, monkeypatch):
     )
 
     async def override_db():
-        return mock_db
+        yield mock_db
 
     app.dependency_overrides[get_database] = override_db
     try:
@@ -356,7 +356,7 @@ async def test_list_multipart_uploads(mock_db, monkeypatch):
     )
 
     async def override_db():
-        return mock_db
+        yield mock_db
 
     app.dependency_overrides[get_database] = override_db
     try:
@@ -407,7 +407,7 @@ async def test_simple_bearer_upload(mock_db, fake_storage, monkeypatch):
     monkeypatch.setattr(upload_mod, "storage", fake_storage)
 
     async def override_db():
-        return mock_db
+        yield mock_db
 
     app.dependency_overrides[get_database] = override_db
     try:

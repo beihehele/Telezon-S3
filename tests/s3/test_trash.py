@@ -1,15 +1,15 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.core.config import DATABASE_NAME
 from app.crud.blob import crud_create_blob, crud_get_all_blobs
 from app.crud.trash import crud_list_trash
-from app.db.mongodb import get_database
+from app.db.session import get_database
 from app.main import app
 from app.models.blob import BlobFilterParams, BlobInCreate
 from app.models.bucket import Bucket
 from app.models.user import User
 from app.s3.object_lifecycle import delete_live_object
+from tests.conftest import find_blob_row
 
 
 def _bucket():
@@ -67,9 +67,7 @@ async def test_soft_delete_inserts_trash_before_live_delete(mock_db, monkeypatch
 
     async def tracking_insert(*args, **kwargs):
         calls.append("insert_trash")
-        live = await mock_db[DATABASE_NAME]["blobs"].find_one(
-            {"bucket_name": "alice", "path": "order.txt"}
-        )
+        live = await find_blob_row(mock_db, "alice", "order.txt")
         assert live, "live row must still exist when trash is inserted"
         return await real_insert(*args, **kwargs)
 
@@ -112,7 +110,7 @@ async def test_soft_delete_via_s3_api(mock_db, monkeypatch):
     monkeypatch.setattr("app.s3.handlers.object.precheck_request_for_bucket", fake_verify)
 
     async def override_db():
-        return mock_db
+        yield mock_db
 
     app.dependency_overrides[get_database] = override_db
     try:
@@ -125,7 +123,7 @@ async def test_soft_delete_via_s3_api(mock_db, monkeypatch):
 
     trash = await crud_list_trash(mock_db, bucket_name="alice")
     assert len(trash) == 1
-    assert await mock_db[DATABASE_NAME]["blobs"].find_one({"path": "hello.txt"}) is None
+    assert await find_blob_row(mock_db, "alice", "hello.txt") is None
 
 
 @pytest.mark.asyncio
@@ -162,8 +160,6 @@ async def test_restore_from_trash(mock_db, monkeypatch):
     )
     await crud_delete_trash(mock_db, item.trash_id)
     assert await crud_get_trash(mock_db, item.trash_id) is None
-    row = await mock_db[DATABASE_NAME]["blobs"].find_one(
-        {"bucket_name": "alice", "path": "r.txt"}
-    )
+    row = await find_blob_row(mock_db, "alice", "r.txt")
     assert row is not None
-    assert row["message_id"] == 9
+    assert row.message_id == 9

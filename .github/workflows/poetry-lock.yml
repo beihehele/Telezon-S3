@@ -1,0 +1,36 @@
+name: Poetry lock
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - pyproject.toml
+      - poetry.lock
+
+jobs:
+  lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Poetry
+        run: pip install poetry poetry-plugin-export
+      - name: Regenerate lockfile
+        run: poetry lock --no-interaction
+      - name: Verify lock contents
+        run: python scripts/verify_poetry_lock.py
+      - name: Upload refreshed poetry.lock
+        uses: actions/upload-artifact@v4
+        with:
+          name: poetry-lock
+          path: poetry.lock
+      - name: Require committed poetry.lock
+        run: |
+          if ! git diff --quiet poetry.lock; then
+            echo "::error::poetry.lock is out of date. On Linux/macOS run: poetry lock && make export"
+            git diff --stat poetry.lock
+            exit 1
+          fi

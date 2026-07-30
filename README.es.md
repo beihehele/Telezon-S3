@@ -8,7 +8,7 @@ Documentación: [`docs/S3-COMPAT.md`](docs/S3-COMPAT.md), [`docs/AUTH-AND-SHARIN
 
 [![Release](https://img.shields.io/github/v/release/beihehele/Telezon-S3)](https://github.com/beihehele/Telezon-S3/releases)
 
-> Un **solo worker** por cuenta de Telegram (`SESSION_STRING` no se comparte entre procesos).
+> Un **solo worker** por cuenta de Telegram (`SESSION_STRING` no se comparte entre procesos). En Windows, usa **contenedores Linux** con Docker Desktop (no hay `.exe` oficial en este repositorio).
 
 ## Despliegue
 
@@ -27,8 +27,11 @@ docker compose --profile setup run --rm setup
 docker compose up -d
 ```
 
-- Servicio: `http://localhost:8000`
-- Salud: `http://localhost:8000/api/health`
+1. Edita `.env`: `TELEGRAM_API_ID` / `TELEGRAM_API_HASH`, `SECRET_KEY`, MySQL (`MYSQL_*` o `DATABASE_URL`), `INITIAL_ADMIN_*`. Deja **`SESSION_STRING` vacío** hasta después del setup.
+2. Tras el setup, pega `SESSION_STRING=...` en `.env` y arranca con `docker compose up -d`.
+
+- Servicio: `http://localhost:8000` (puerto del host = `PORT` en `.env`; el contenedor escucha en **8000**)
+- Salud: `http://localhost:8000/api/health` — JSON con **`database`** y **`telegram`** (ya no `mongodb`; desde 0.9+)
 - Swagger: `http://localhost:8000/docs`
 
 ## Configuración
@@ -36,6 +39,11 @@ docker compose up -d
 Variables principales en `.env` (ver `.env.example`):
 
 ```env
+MYSQL_USER=telezon
+MYSQL_PASSWORD=change-me
+MYSQL_DATABASE=TelezonS3
+# O: DATABASE_URL=mysql://user:pass@host:3306/TelezonS3  (codifica caracteres especiales en la contraseña)
+
 TELEGRAM_API_ID=
 TELEGRAM_API_HASH=
 SESSION_STRING=

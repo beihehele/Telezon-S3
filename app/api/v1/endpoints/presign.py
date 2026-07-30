@@ -1,3 +1,4 @@
+from sqlalchemy.ext.asyncio import AsyncSession
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field
@@ -6,12 +7,11 @@ from app.api.auth.utils import is_admin
 from app.core.config import PUBLIC_BASE_URL
 from app.core.token import get_current_user
 from app.crud.bucket import crud_get_bucket_by_name
-from app.db.mongodb import get_database
+from app.db.session import get_database
 from app.models.user import User
 from app.s3.presign import create_presigned_url
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from motor.motor_asyncio import AsyncIOMotorClient
 from starlette.status import HTTP_403_FORBIDDEN, HTTP_404_NOT_FOUND
 
 router = APIRouter(prefix="/presign", tags=["Presign"])
@@ -34,7 +34,7 @@ class PresignResponse(BaseModel):
 async def create_presign(
     payload: PresignRequest,
     request: Request,
-    db: AsyncIOMotorClient = Depends(get_database),
+    db: AsyncSession = Depends(get_database),
     current_user: User = Depends(get_current_user),
 ):
     method = payload.method.upper()

@@ -16,21 +16,13 @@ PORT = int(os.getenv("PORT"))
 
 SECRET_KEY = os.getenv("SECRET_KEY")
 
-MONGO_HOST = os.getenv("MONGO_HOST")
-MONGO_PORT = os.getenv("MONGO_PORT")
-MONGO_USER = os.getenv("MONGO_USER")
-MONGO_PASSWORD = os.getenv("MONGO_PASSWORD")
+MYSQL_HOST = os.getenv("MYSQL_HOST", "localhost")
+MYSQL_PORT = int(os.getenv("MYSQL_PORT", "3306"))
+MYSQL_USER = os.getenv("MYSQL_USER", "root")
+MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "")
+MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "TelezonS3")
 
-DATABASE_NAME = os.getenv("DATABASE_NAME")
-
-if MONGO_USER and MONGO_PASSWORD:
-    AUTH_URL = f"{MONGO_USER}:{MONGO_PASSWORD}@"
-else:
-    AUTH_URL = ""
-
-DATABASE_URL = (
-    os.getenv("DATABASE_URL") or f"mongodb://{AUTH_URL}{MONGO_HOST}:{MONGO_PORT}"
-)
+DATABASE_URL = os.getenv("DATABASE_URL", "")
 
 TOKEN = os.getenv("BOT_TOKEN")
 CID = os.getenv("CID")

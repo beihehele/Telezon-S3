@@ -1,9 +1,9 @@
+from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import APIRouter, Depends, Request
-from motor.motor_asyncio import AsyncIOMotorClient
 from starlette.responses import Response
 
 from app.crud.bucket import crud_get_all_buckets
-from app.db.mongodb import get_database
+from app.db.session import get_database
 from app.models.bucket import BucketFilterParams
 from app.s3.auth import resolve_identity_from_request, resolve_user_from_request
 from app.s3.errors import s3_error_response
@@ -15,7 +15,7 @@ router = APIRouter(tags=["S3"])
 @router.api_route("/", methods=["GET"], include_in_schema=True)
 async def list_buckets(
     request: Request,
-    db: AsyncIOMotorClient = Depends(get_database),
+    db: AsyncSession = Depends(get_database),
 ):
     identity = await resolve_identity_from_request(db, request)
     user = await resolve_user_from_request(db, request)

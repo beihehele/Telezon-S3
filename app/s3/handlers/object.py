@@ -1,14 +1,14 @@
+from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timezone
 from email.utils import format_datetime
 
 from fastapi import APIRouter, Depends, Request
-from motor.motor_asyncio import AsyncIOMotorClient
 from starlette.responses import Response
 
 from app.core.config import MAX_UPLOAD_BYTES
 from app.crud.blob import crud_create_blob, crud_get_all_blobs
 from app.crud.bucket import crud_get_bucket_by_name
-from app.db.mongodb import get_database
+from app.db.session import get_database
 from app.models.blob import BlobFilterParams, BlobInCreate
 from app.s3.auth import (
     AUTH_OK,
@@ -132,7 +132,7 @@ async def put_object(
     request: Request,
     bucket_name: str,
     key: str,
-    db: AsyncIOMotorClient = Depends(get_database),
+    db: AsyncSession = Depends(get_database),
 ):
     if not key:
         return _empty_key_error(bucket_name)
@@ -268,7 +268,7 @@ async def post_object(
     request: Request,
     bucket_name: str,
     key: str,
-    db: AsyncIOMotorClient = Depends(get_database),
+    db: AsyncSession = Depends(get_database),
 ):
     if not key:
         return _empty_key_error(bucket_name)
@@ -297,7 +297,7 @@ async def get_object(
     request: Request,
     bucket_name: str,
     key: str,
-    db: AsyncIOMotorClient = Depends(get_database),
+    db: AsyncSession = Depends(get_database),
 ):
     if not key:
         return _empty_key_error(bucket_name)
@@ -428,7 +428,7 @@ async def head_object(
     request: Request,
     bucket_name: str,
     key: str,
-    db: AsyncIOMotorClient = Depends(get_database),
+    db: AsyncSession = Depends(get_database),
 ):
     if not key:
         return _empty_key_error(bucket_name)
@@ -489,7 +489,7 @@ async def delete_object(
     request: Request,
     bucket_name: str,
     key: str,
-    db: AsyncIOMotorClient = Depends(get_database),
+    db: AsyncSession = Depends(get_database),
 ):
     if not key:
         return _empty_key_error(bucket_name)

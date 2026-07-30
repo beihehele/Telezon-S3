@@ -1,14 +1,17 @@
 """Optional lightweight management bot commands."""
 
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.config import (
-    DATABASE_NAME,
     ENABLE_MGMT_BOT,
     TELEGRAM_ADMIN_IDS,
     TELEGRAM_PROXY,
     TOKEN,
     logger,
 )
-from app.db.mongodb import db
+from app.db.session import async_session_factory
+from app.db.tables import BlobRow, BucketRow, UserRow
 
 
 _app = None
@@ -69,12 +72,15 @@ async def start_mgmt_bot_if_enabled() -> None:
             if not _is_admin(update):
                 await update.message.reply_text("Unauthorized")
                 return
-            if db.client is None:
+            if async_session_factory is None:
                 await update.message.reply_text("Database not ready")
                 return
-            users = await db.client[DATABASE_NAME]["users"].count_documents({})
-            buckets = await db.client[DATABASE_NAME]["buckets"].count_documents({})
-            blobs = await db.client[DATABASE_NAME]["blobs"].count_documents({})
+            async with async_session_factory() as session:
+                users = await session.scalar(select(func.count()).select_from(UserRow))
+                buckets = await session.scalar(
+                    select(func.count()).select_from(BucketRow)
+                )
+                blobs = await session.scalar(select(func.count()).select_from(BlobRow))
             await update.message.reply_text(
                 f"users={users}\nbuckets={buckets}\nobjects={blobs}"
             )
@@ -83,13 +89,13 @@ async def start_mgmt_bot_if_enabled() -> None:
             if not _is_admin(update):
                 await update.message.reply_text("Unauthorized")
                 return
-            if db.client is None:
+            if async_session_factory is None:
                 await update.message.reply_text("Database not ready")
                 return
             names = []
-            cursor = db.client[DATABASE_NAME]["buckets"].find({}, {"name": 1}).limit(50)
-            async for row in cursor:
-                names.append(row.get("name", "?"))
+            async with async_session_factory() as session:
+                result = await session.execute(select(BucketRow.name).limit(50))
+                names = [row[0] for row in result.all()]
             await update.message.reply_text(
                 "buckets:\n" + ("\n".join(names) if names else "(none)")
             )

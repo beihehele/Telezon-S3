@@ -1,4 +1,4 @@
-from app.storage.storage import PutFileResult
+from app.storage.backend import PutFileResult
 
 
 def test_put_file_result_fields():

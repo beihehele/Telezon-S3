@@ -1,9 +1,9 @@
+from sqlalchemy.ext.asyncio import AsyncSession
 import hashlib
 import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape
 
 from fastapi import Request
-from motor.motor_asyncio import AsyncIOMotorClient
 from starlette.responses import Response
 
 from app.core.config import (
@@ -93,7 +93,7 @@ async def create_multipart_upload(
     request: Request,
     bucket_name: str,
     key: str,
-    db: AsyncIOMotorClient,
+    db: AsyncSession,
 ):
     resource = f"/{bucket_name}/{key}"
     bucket = await crud_get_bucket_by_name(db, bucket_name)
@@ -125,7 +125,7 @@ async def upload_part(
     request: Request,
     bucket_name: str,
     key: str,
-    db: AsyncIOMotorClient,
+    db: AsyncSession,
     upload_id: str,
     part_number: int,
 ):
@@ -208,7 +208,7 @@ async def complete_multipart_upload(
     request: Request,
     bucket_name: str,
     key: str,
-    db: AsyncIOMotorClient,
+    db: AsyncSession,
     upload_id: str,
 ):
     resource = f"/{bucket_name}/{key}"
@@ -353,7 +353,7 @@ async def abort_multipart_upload(
     request: Request,
     bucket_name: str,
     key: str,
-    db: AsyncIOMotorClient,
+    db: AsyncSession,
     upload_id: str,
 ):
     resource = f"/{bucket_name}/{key}"
@@ -385,7 +385,7 @@ async def list_parts(
     request: Request,
     bucket_name: str,
     key: str,
-    db: AsyncIOMotorClient,
+    db: AsyncSession,
     upload_id: str,
 ):
     resource = f"/{bucket_name}/{key}"

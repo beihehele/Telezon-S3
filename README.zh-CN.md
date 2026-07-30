@@ -27,7 +27,7 @@ cp .env.example .env
 
 **Windows（PowerShell）：** 将上述 `curl` 换成 `Invoke-WebRequest`，并下载 `setup-telegram.ps1`。
 
-1. **配置 `.env`**：填写 [my.telegram.org](https://my.telegram.org/apps) 的 `TELEGRAM_API_ID`、`TELEGRAM_API_HASH`，以及 `SECRET_KEY`、Mongo 密码、`INITIAL_ADMIN_*`；**`SESSION_STRING` 先留空**。
+1. **配置 `.env`**：填写 [my.telegram.org](https://my.telegram.org/apps) 的 `TELEGRAM_API_ID`、`TELEGRAM_API_HASH`，以及 `SECRET_KEY`、MySQL（`MYSQL_*` 或 `DATABASE_URL`）、`INITIAL_ADMIN_*`；**`SESSION_STRING` 先留空**。
 2. **首次 Telegram 登录**（需交互终端：手机号 / 验证码 / 两步验证）：
 
 ```bash
@@ -45,12 +45,12 @@ docker compose up -d
 ```
 
 - 服务：`http://localhost:8000`（`.env` 中 `PORT` 为宿主机端口，容器内固定 **8000**）
-- 就绪：`http://localhost:8000/api/health`
+- 就绪：`http://localhost:8000/api/health`（JSON 字段为 **`database`** / **`telegram`**，不再返回 `mongodb`）
 - 文档：`http://localhost:8000/docs`
 - 使用 `INITIAL_ADMIN_*` 登录 REST 后，在 `/api/v1/credentials` 创建 S3 访问密钥
 
 <details>
-<summary>仅运行应用（已有 MongoDB）</summary>
+<summary>仅运行应用（已有 MySQL）</summary>
 
 在 `.env` 中配置 `DATABASE_URL` 后：
 
@@ -61,7 +61,7 @@ docker run --rm -p 8000:8000 --env-file .env ghcr.io/beihehele/telezon-s3:${IMAG
 
 </details>
 
-**需要：** Docker Compose、[Telegram API 应用](https://my.telegram.org/apps)、用于存储的频道或群组（`CID`）。
+**需要：** Docker Compose、[Telegram API 应用](https://my.telegram.org/apps)、用于存储的频道或群组（`CID`）。Windows 请用 Docker Desktop 跑 **Linux 容器**（本仓库不提供独立 `.exe` 发行）。
 
 ## 配置说明
 
@@ -72,9 +72,10 @@ PROJECT_NAME='Telezon S3'
 PORT=8000
 SECRET_KEY=请改为强随机串
 
-MONGO_USER=admin
-MONGO_PASSWORD=请修改
-DATABASE_NAME=TelezonS3
+MYSQL_USER=telezon
+MYSQL_PASSWORD=请修改
+MYSQL_DATABASE=TelezonS3
+# 或 DATABASE_URL=mysql://user:pass@host:3306/TelezonS3
 
 TELEGRAM_API_ID=
 TELEGRAM_API_HASH=

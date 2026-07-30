@@ -1,5 +1,5 @@
+from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import APIRouter, Depends, Request
-from motor.motor_asyncio import AsyncIOMotorClient
 from starlette.responses import Response
 
 from app.crud.bucket import (
@@ -9,7 +9,7 @@ from app.crud.bucket import (
     crud_get_bucket_by_name,
 )
 from app.crud.multipart import crud_list_multipart_uploads
-from app.db.mongodb import get_database
+from app.db.session import get_database
 from app.models.bucket import BucketInCreate
 from app.models.user import User
 from app.s3.auth import (
@@ -29,7 +29,7 @@ router = APIRouter(tags=["S3"])
 async def head_bucket(
     request: Request,
     bucket_name: str,
-    db: AsyncIOMotorClient = Depends(get_database),
+    db: AsyncSession = Depends(get_database),
 ):
     resource = f"/{bucket_name}"
     blocked = reject_unsupported_subresource(request, resource)
@@ -50,7 +50,7 @@ async def head_bucket(
 async def create_bucket(
     request: Request,
     bucket_name: str,
-    db: AsyncIOMotorClient = Depends(get_database),
+    db: AsyncSession = Depends(get_database),
 ):
     resource = f"/{bucket_name}"
     blocked = reject_unsupported_subresource(request, resource)
@@ -90,7 +90,7 @@ async def create_bucket(
 async def delete_bucket(
     request: Request,
     bucket_name: str,
-    db: AsyncIOMotorClient = Depends(get_database),
+    db: AsyncSession = Depends(get_database),
 ):
     resource = f"/{bucket_name}"
     blocked = reject_unsupported_subresource(request, resource)

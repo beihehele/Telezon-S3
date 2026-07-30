@@ -1,7 +1,7 @@
+from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
-from motor.motor_asyncio import AsyncIOMotorClient
 from starlette.status import HTTP_403_FORBIDDEN, HTTP_404_NOT_FOUND
 
 from app.api.auth.utils import is_admin
@@ -13,7 +13,7 @@ from app.crud.bucket import (
     crud_update_bucket,
 )
 from app.crud.shortcuts import check_free_bucket_name
-from app.db.mongodb import get_database
+from app.db.session import get_database
 from app.models.bucket import Bucket, BucketFilterParams, BucketInCreate, BucketInUpdate
 from app.models.user import User
 
@@ -30,7 +30,7 @@ async def get_all_buckets(
     owner_username: str = "",
     limit: int = Query(20),
     offset: int = Query(0),
-    db: AsyncIOMotorClient = Depends(get_database),
+    db: AsyncSession = Depends(get_database),
     current_user: User = Depends(get_current_user),
 ):
     if not is_admin(current_user):
@@ -47,7 +47,7 @@ async def get_all_buckets(
 @router.get("/{name}", response_model=Bucket)
 async def get_bucket(
     name: str,
-    db: AsyncIOMotorClient = Depends(get_database),
+    db: AsyncSession = Depends(get_database),
     current_user: User = Depends(get_current_user),
 ):
     bucket = await crud_get_bucket_by_name(db, name)
@@ -69,7 +69,7 @@ async def get_bucket(
 @router.post("/", response_model=BucketInCreate)
 async def create_bucket(
     bucket: BucketInCreate,
-    db: AsyncIOMotorClient = Depends(get_database),
+    db: AsyncSession = Depends(get_database),
     current_user: User = Depends(get_current_user),
 ):
     # Align with S3 CreateBucket: any authenticated user may create a bucket
@@ -88,7 +88,7 @@ async def create_bucket(
 async def update_bucket(
     bucket_name: str,
     bucket: BucketInUpdate = Body(...),
-    db: AsyncIOMotorClient = Depends(get_database),
+    db: AsyncSession = Depends(get_database),
     current_user: User = Depends(get_current_user),
 ):
     existing = await crud_get_bucket_by_name(db, bucket_name)

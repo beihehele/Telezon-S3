@@ -1,13 +1,13 @@
+from sqlalchemy.ext.asyncio import AsyncSession
 from xml.sax.saxutils import escape
 
 from fastapi import APIRouter, Depends, Request
-from motor.motor_asyncio import AsyncIOMotorClient
 from starlette.responses import Response
 
 from app.crud.blob import crud_list_blobs_for_s3
 from app.crud.bucket import crud_get_bucket_by_name
 from app.crud.multipart import crud_list_multipart_uploads
-from app.db.mongodb import get_database
+from app.db.session import get_database
 from app.s3.auth import (
     AUTH_OK,
     auth_error_response,
@@ -92,7 +92,7 @@ async def _list_multipart_uploads(request, bucket_name, db, resource):
 async def list_objects(
     request: Request,
     bucket_name: str,
-    db: AsyncIOMotorClient = Depends(get_database),
+    db: AsyncSession = Depends(get_database),
 ):
     resource = f"/{bucket_name}"
 

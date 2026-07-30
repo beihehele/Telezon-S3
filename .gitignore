@@ -7,5 +7,10 @@ dist/
 .vscode/
 .idea/
 .env
+.poetry-venv/
+docs/superpowers/
+packaging/
+scripts/build-exe.ps1
+scripts/test-exe.ps1
 *.session
 *.pdf

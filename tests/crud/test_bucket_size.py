@@ -2,20 +2,19 @@ import pytest
 
 from app.crud.blob import crud_create_blob
 from app.crud.bucket import crud_create_bucket, crud_get_bucket_by_name
+from app.crud.user import crud_create_user
 from app.models.blob import BlobInCreate
 from app.models.bucket import BucketInCreate
-from app.models.user import User
+from app.models.user import User, UserInCreate
 
 
 @pytest.mark.asyncio
 async def test_bucket_size_sums_without_loading_blob_docs(mock_db):
-    owner = User(
-        username="alice",
-        email="alice@example.com",
-        access_key_id="AKIATESTACCESS1",
-        secret_key="secretkeysecret",
+    owner_db = await crud_create_user(
+        mock_db,
+        UserInCreate(username="alice", email="alice@example.com", password="secret"),
     )
-    await mock_db["telezon_test"]["users"].insert_one(owner.model_dump())
+    owner = User(**owner_db.model_dump())
     await crud_create_bucket(
         mock_db, BucketInCreate(name="alice", owner_username="alice"), owner
     )

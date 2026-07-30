@@ -1,14 +1,14 @@
+from sqlalchemy.ext.asyncio import AsyncSession
 import base64
 import hashlib
 import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape
 
 from fastapi import APIRouter, Depends, Request
-from motor.motor_asyncio import AsyncIOMotorClient
 from starlette.responses import Response
 
 from app.crud.bucket import crud_get_bucket_by_name
-from app.db.mongodb import get_database
+from app.db.session import get_database
 from app.s3.auth import (
     AUTH_OK,
     auth_error_response,
@@ -67,7 +67,7 @@ def _delete_result_xml(
 async def delete_objects(
     request: Request,
     bucket_name: str,
-    db: AsyncIOMotorClient = Depends(get_database),
+    db: AsyncSession = Depends(get_database),
 ):
     resource = f"/{bucket_name}"
     if "delete" not in request.query_params:

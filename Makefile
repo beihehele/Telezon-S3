@@ -22,4 +22,13 @@ setup_account_storage:
 
 .PHONY: export
 export:
-	poetry export -f requirements.txt --output requirements.txt
+	poetry export -f requirements.txt --output requirements.txt --without-hashes --without dev
+
+.PHONY: lock
+lock:
+	poetry lock
+	poetry export -f requirements.txt --output requirements.txt --without-hashes --without dev
+
+# Windows fallback when poetry hits WinError 1920:
+#   python -m uv tool run poetry lock
+#   python -m uv tool run poetry export -f requirements.txt -o requirements.txt --without-hashes --without dev

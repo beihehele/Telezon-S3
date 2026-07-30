@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from motor.motor_asyncio import AsyncIOMotorClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
 from app.core.config import ENABLE_TRASH
 from app.crud.blob import crud_delete_blob
 from app.crud.trash import crud_insert_trash_from_blob
+from app.db.mappers import blob_in_db_from_row
+from app.db.tables import BlobRow
 from app.models.blob import BlobInDb
 from app.models.trash import TrashItem
 from app.ops.tg_delete import safe_delete_tg_message
@@ -39,7 +42,7 @@ def _as_blob_in_db(live, bucket_name: str, key: str | None = None) -> BlobInDb:
 
 
 async def _purge_tg_for_blob(
-    db: AsyncIOMotorClient,
+    db: AsyncSession,
     blob: BlobInDb | TrashItem,
     *,
     chat_id: str | None,
@@ -59,7 +62,7 @@ async def _purge_tg_for_blob(
 
 
 async def delete_live_object(
-    db: AsyncIOMotorClient,
+    db: AsyncSession,
     *,
     bucket_name: str,
     key: str,
@@ -73,16 +76,19 @@ async def delete_live_object(
     Soft-delete inserts trash **before** removing the live row so a failed trash
     write cannot strand an object with neither listing nor restore path.
     """
-    from app.core.config import DATABASE_NAME
     from app.crud.trash import crud_delete_trash
 
-    row = await db[DATABASE_NAME]["blobs"].find_one(
-        {"bucket_name": bucket_name, "path": key}
+    result = await db.execute(
+        select(BlobRow).where(
+            BlobRow.bucket_name == bucket_name,
+            BlobRow.path == key,
+        )
     )
+    row = result.scalar_one_or_none()
     if not row:
         return None
 
-    snapshot = BlobInDb(**row)
+    snapshot = blob_in_db_from_row(row)
     use_trash = ENABLE_TRASH and not bypass_trash
     trash_item: TrashItem | None = None
 
@@ -106,7 +112,7 @@ async def delete_live_object(
 
 
 async def retire_previous_version(
-    db: AsyncIOMotorClient,
+    db: AsyncSession,
     previous,
     *,
     bucket_name: str,
@@ -128,7 +134,7 @@ async def retire_previous_version(
 
 
 async def purge_trash_item(
-    db: AsyncIOMotorClient,
+    db: AsyncSession,
     item: TrashItem,
     *,
     chat_id: str | None = None,

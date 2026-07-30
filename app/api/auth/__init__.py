@@ -1,8 +1,8 @@
+from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import timedelta
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
-from motor.motor_asyncio import AsyncIOMotorClient
 from starlette.status import HTTP_400_BAD_REQUEST
 
 from app.core.config import logger
@@ -14,7 +14,7 @@ from app.crud.user import (
     crud_delete_user,
     crud_get_user_by_username,
 )
-from app.db.mongodb import get_database
+from app.db.session import get_database
 from app.models.bucket import BucketInCreate
 from app.models.token import Token
 from app.models.user import User, UserInCreate
@@ -27,7 +27,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # One week
 @router.post("/login", response_model=Token)
 async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
-    db: AsyncIOMotorClient = Depends(get_database),
+    db: AsyncSession = Depends(get_database),
 ):
     user = await crud_get_user_by_username(db, form_data.username)
     if not user or not user.check_password(form_data.password):
@@ -47,7 +47,7 @@ async def login(
 @router.post("/signup", response_model=User)
 async def signup(
     user: UserInCreate = Body(...),
-    db: AsyncIOMotorClient = Depends(get_database),
+    db: AsyncSession = Depends(get_database),
 ):
     await check_free_username_and_email(db, user.username, user.email)
     new_user = await crud_create_user(db, user)

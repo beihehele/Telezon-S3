@@ -1,7 +1,7 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.db.mongodb import get_database
+from app.db.session import get_database
 from app.main import app
 from app.models.blob import Blob
 from app.models.bucket import Bucket
@@ -53,7 +53,7 @@ async def test_public_get_without_auth(mock_db, fake_storage, monkeypatch):
     monkeypatch.setattr("app.s3.handlers.object.storage", fake_storage)
 
     async def override_db():
-        return mock_db
+        yield mock_db
 
     app.dependency_overrides[get_database] = override_db
     try:
@@ -79,7 +79,7 @@ async def test_public_put_and_delete_still_require_auth(mock_db, monkeypatch):
     monkeypatch.setattr("app.s3.handlers.object.precheck_request_for_bucket", deny)
 
     async def override_db():
-        return mock_db
+        yield mock_db
 
     app.dependency_overrides[get_database] = override_db
     try:
@@ -106,7 +106,7 @@ async def test_private_get_still_requires_auth(mock_db, monkeypatch):
     monkeypatch.setattr("app.s3.handlers.object.precheck_request_for_bucket", deny)
 
     async def override_db():
-        return mock_db
+        yield mock_db
 
     app.dependency_overrides[get_database] = override_db
     try:
@@ -142,7 +142,7 @@ async def test_put_passes_bucket_telegram_destination(
     monkeypatch.setattr("app.s3.handlers.object.storage", fake_storage)
 
     async def override_db():
-        return mock_db
+        yield mock_db
 
     app.dependency_overrides[get_database] = override_db
     try:

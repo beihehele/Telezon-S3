@@ -25,8 +25,10 @@ RUN apk add --no-cache \
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt \
+COPY pyproject.toml ./
+RUN pip install --no-cache-dir poetry poetry-plugin-export \
+    && poetry export -f requirements.txt --output requirements.txt --without-hashes --without dev \
+    && pip install --no-cache-dir -r requirements.txt \
     && pip install --no-cache-dir "cryptography>=44.0.0" "socksio>=1.0.0" "httpx[socks]>=0.27.0"
 
 COPY . .

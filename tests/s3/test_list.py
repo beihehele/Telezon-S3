@@ -1,7 +1,7 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.db.mongodb import get_database
+from app.db.session import get_database
 from app.main import app
 from app.models.blob import BlobInDb
 from app.models.bucket import Bucket
@@ -48,7 +48,7 @@ async def test_list_objects_v2_prefix(mock_db, monkeypatch):
     )
 
     async def override_db():
-        return mock_db
+        yield mock_db
 
     app.dependency_overrides[get_database] = override_db
     try:
@@ -93,7 +93,7 @@ async def test_list_objects_v2_continuation(mock_db, monkeypatch):
     )
 
     async def override_db():
-        return mock_db
+        yield mock_db
 
     app.dependency_overrides[get_database] = override_db
     try:
@@ -155,7 +155,7 @@ async def test_list_buckets(mock_db, monkeypatch):
     )
 
     async def override_db():
-        return mock_db
+        yield mock_db
 
     app.dependency_overrides[get_database] = override_db
     try:

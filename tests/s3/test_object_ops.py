@@ -3,12 +3,12 @@ import io
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.db.mongodb import get_database
+from app.db.session import get_database
 from app.main import app
 from app.models.blob import Blob, BlobInDb
 from app.models.bucket import Bucket
 from app.models.user import User
-from app.storage.storage import PutFileResult
+from app.storage.backend import PutFileResult
 
 
 def _bucket():
@@ -48,7 +48,7 @@ async def test_head_returns_headers_when_authorized(mock_db, fake_storage, monke
     monkeypatch.setattr("app.s3.handlers.object.storage", fake_storage)
 
     async def override_db():
-        return mock_db
+        yield mock_db
 
     app.dependency_overrides[get_database] = override_db
     try:
@@ -77,7 +77,7 @@ async def test_head_rejects_unauthorized(mock_db, monkeypatch):
     monkeypatch.setattr("app.s3.handlers.object.precheck_request_for_bucket", fake_verify)
 
     async def override_db():
-        return mock_db
+        yield mock_db
 
     app.dependency_overrides[get_database] = override_db
     try:
@@ -93,7 +93,8 @@ async def test_head_rejects_unauthorized(mock_db, monkeypatch):
 async def test_delete_calls_telegram_when_message_id_present(
     mock_db, fake_storage, monkeypatch
 ):
-    from app.core.config import DATABASE_NAME
+    from app.crud.blob import crud_create_blob
+    from app.models.blob import BlobInCreate
 
     deleted = BlobInDb(
         path="hello.txt",
@@ -103,7 +104,17 @@ async def test_delete_calls_telegram_when_message_id_present(
         bucket_name="alice",
         message_id=42,
     )
-    await mock_db[DATABASE_NAME]["blobs"].insert_one(deleted.model_dump())
+    await crud_create_blob(
+        mock_db,
+        BlobInCreate(
+            path=deleted.path,
+            file=deleted.file,
+            content_type=deleted.content_type,
+            size=deleted.size,
+            message_id=deleted.message_id,
+        ),
+        deleted.bucket_name,
+    )
 
     async def fake_bucket(db, name):
         return _bucket()
@@ -132,7 +143,7 @@ async def test_delete_calls_telegram_when_message_id_present(
     )
 
     async def override_db():
-        return mock_db
+        yield mock_db
 
     app.dependency_overrides[get_database] = override_db
     try:
@@ -161,7 +172,7 @@ async def test_empty_key_rejected(mock_db, monkeypatch):
     monkeypatch.setattr("app.s3.handlers.object.precheck_request_for_bucket", fake_verify)
 
     async def override_db():
-        return mock_db
+        yield mock_db
 
     app.dependency_overrides[get_database] = override_db
     try:
@@ -178,7 +189,8 @@ async def test_empty_key_rejected(mock_db, monkeypatch):
 async def test_delete_without_message_id_skips_telegram(
     mock_db, fake_storage, monkeypatch
 ):
-    from app.core.config import DATABASE_NAME
+    from app.crud.blob import crud_create_blob
+    from app.models.blob import BlobInCreate
 
     deleted = BlobInDb(
         path="hello.txt",
@@ -188,7 +200,17 @@ async def test_delete_without_message_id_skips_telegram(
         bucket_name="alice",
         message_id=None,
     )
-    await mock_db[DATABASE_NAME]["blobs"].insert_one(deleted.model_dump())
+    await crud_create_blob(
+        mock_db,
+        BlobInCreate(
+            path=deleted.path,
+            file=deleted.file,
+            content_type=deleted.content_type,
+            size=deleted.size,
+            message_id=deleted.message_id,
+        ),
+        deleted.bucket_name,
+    )
 
     async def fake_bucket(db, name):
         return _bucket()
@@ -207,7 +229,7 @@ async def test_delete_without_message_id_skips_telegram(
     monkeypatch.setattr("app.s3.handlers.object.storage", fake_storage)
 
     async def override_db():
-        return mock_db
+        yield mock_db
 
     app.dependency_overrides[get_database] = override_db
     try:
@@ -264,7 +286,7 @@ async def test_put_overwrite_soft_deletes_previous(mock_db, fake_storage, monkey
     monkeypatch.setattr("app.s3.object_lifecycle.ENABLE_TRASH", True)
 
     async def override_db():
-        return mock_db
+        yield mock_db
 
     app.dependency_overrides[get_database] = override_db
     try:
@@ -318,7 +340,7 @@ async def test_put_get_roundtrip(mock_db, fake_storage, monkeypatch):
     monkeypatch.setattr("app.s3.handlers.object.storage", fake_storage)
 
     async def override_db():
-        return mock_db
+        yield mock_db
 
     app.dependency_overrides[get_database] = override_db
     try:
@@ -352,7 +374,7 @@ async def test_put_rejects_entity_too_large(mock_db, monkeypatch):
     monkeypatch.setattr("app.s3.handlers.object.MAX_UPLOAD_BYTES", 4)
 
     async def override_db():
-        return mock_db
+        yield mock_db
 
     app.dependency_overrides[get_database] = override_db
     try:
@@ -375,7 +397,7 @@ async def test_put_rejects_oversized_content_length_early(mock_db, monkeypatch):
     monkeypatch.setattr("app.s3.handlers.object.MAX_UPLOAD_BYTES", 4)
 
     async def override_db():
-        return mock_db
+        yield mock_db
 
     app.dependency_overrides[get_database] = override_db
     try:
@@ -416,7 +438,7 @@ async def test_put_returns_service_unavailable(mock_db, monkeypatch):
     monkeypatch.setattr("app.s3.handlers.object.storage", DownStorage())
 
     async def override_db():
-        return mock_db
+        yield mock_db
 
     app.dependency_overrides[get_database] = override_db
     try:
@@ -453,7 +475,7 @@ async def test_put_returns_slow_down_on_throttle(mock_db, monkeypatch):
     monkeypatch.setattr("app.s3.handlers.object.storage", ThrottledStorage())
 
     async def override_db():
-        return mock_db
+        yield mock_db
 
     app.dependency_overrides[get_database] = override_db
     try:

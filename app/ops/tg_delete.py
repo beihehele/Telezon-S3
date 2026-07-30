@@ -6,47 +6,55 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from motor.motor_asyncio import AsyncIOMotorClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import DATABASE_NAME
+from app.db.tables import PendingTgDeleteRow
 
 logger = logging.getLogger(__name__)
 
-COLLECTION = "pending_tg_deletes"
-
 
 def _storage():
-    # Attribute access on the package (not `from app.storage import storage`)
-    # so the lazy instance wins over the `storage.py` submodule.
     import app.storage as storage_pkg
 
     return storage_pkg.storage
 
 
 async def enqueue_pending_tg_delete(
-    db: AsyncIOMotorClient,
+    db: AsyncSession,
     *,
     message_id: int,
     chat_id: Optional[str] = None,
     reason: str = "",
 ) -> None:
-    await db[DATABASE_NAME][COLLECTION].update_one(
-        {"message_id": message_id, "chat_id": chat_id},
-        {
-            "$set": {
-                "message_id": message_id,
-                "chat_id": chat_id,
-                "reason": reason[:200],
-                "updated_at": datetime.now(timezone.utc),
-            },
-            "$setOnInsert": {"created_at": datetime.now(timezone.utc), "attempts": 0},
-        },
-        upsert=True,
+    chat_key = chat_id or ""
+    result = await db.execute(
+        select(PendingTgDeleteRow).where(
+            PendingTgDeleteRow.message_id == message_id,
+            PendingTgDeleteRow.chat_id_key == chat_key,
+        )
     )
+    row = result.scalar_one_or_none()
+    now = datetime.now(timezone.utc)
+    if row is None:
+        row = PendingTgDeleteRow(
+            message_id=message_id,
+            chat_id=chat_id,
+            chat_id_key=chat_key,
+            reason=reason[:200],
+            attempts=0,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(row)
+    else:
+        row.reason = reason[:200]
+        row.updated_at = now
+    await db.flush()
 
 
 async def safe_delete_tg_message(
-    db: AsyncIOMotorClient | None,
+    db: AsyncSession | None,
     message_id: int | None,
     *,
     chat_id: Optional[str] = None,
@@ -68,38 +76,28 @@ async def safe_delete_tg_message(
     return False
 
 
-async def retry_pending_tg_deletes(
-    db: AsyncIOMotorClient, *, limit: int = 50
-) -> int:
+async def retry_pending_tg_deletes(db: AsyncSession, *, limit: int = 50) -> int:
     cleared = 0
-    cursor = db[DATABASE_NAME][COLLECTION].find({}).limit(limit)
-    async for row in cursor:
-        message_id = row.get("message_id")
-        chat_id = row.get("chat_id")
+    result = await db.execute(select(PendingTgDeleteRow).limit(limit))
+    rows = list(result.scalars().all())
+    for row in rows:
+        message_id = row.message_id
+        chat_id = row.chat_id
         if message_id is None:
-            await db[DATABASE_NAME][COLLECTION].delete_one({"_id": row["_id"]})
+            await db.delete(row)
             continue
         try:
             ok = await _storage().delete_message(message_id, chat_id=chat_id)
         except Exception:
             ok = False
-            await db[DATABASE_NAME][COLLECTION].update_one(
-                {"_id": row["_id"]},
-                {
-                    "$inc": {"attempts": 1},
-                    "$set": {"updated_at": datetime.now(timezone.utc)},
-                },
-            )
+            row.attempts = int(row.attempts or 0) + 1
+            row.updated_at = datetime.now(timezone.utc)
             continue
         if ok:
-            await db[DATABASE_NAME][COLLECTION].delete_one({"_id": row["_id"]})
+            await db.delete(row)
             cleared += 1
         else:
-            await db[DATABASE_NAME][COLLECTION].update_one(
-                {"_id": row["_id"]},
-                {
-                    "$inc": {"attempts": 1},
-                    "$set": {"updated_at": datetime.now(timezone.utc)},
-                },
-            )
+            row.attempts = int(row.attempts or 0) + 1
+            row.updated_at = datetime.now(timezone.utc)
+    await db.flush()
     return cleared

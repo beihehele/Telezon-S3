@@ -1,9 +1,9 @@
+from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timezone
 from urllib.parse import unquote
 from xml.sax.saxutils import escape
 
 from fastapi import Request
-from motor.motor_asyncio import AsyncIOMotorClient
 from starlette.responses import Response
 
 from app.core.config import MAX_UPLOAD_BYTES
@@ -53,7 +53,7 @@ async def copy_object(
     request: Request,
     bucket_name: str,
     key: str,
-    db: AsyncIOMotorClient,
+    db: AsyncSession,
 ):
     resource = f"/{bucket_name}/{key}"
     src = _parse_copy_source(request.headers.get("x-amz-copy-source") or "")

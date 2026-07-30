@@ -27,7 +27,7 @@ curl -fsSLO "https://github.com/beihehele/Telezon-S3/releases/download/v${VERSIO
 cp .env.example .env
 ```
 
-1. Edit `.env`: set `TELEGRAM_API_ID` / `TELEGRAM_API_HASH`, `SECRET_KEY`, Mongo passwords, `INITIAL_ADMIN_*`. Leave **`SESSION_STRING` empty**.
+1. Edit `.env`: set `TELEGRAM_API_ID` / `TELEGRAM_API_HASH`, `SECRET_KEY`, MySQL settings (`MYSQL_*` or `DATABASE_URL`), `INITIAL_ADMIN_*`. Leave **`SESSION_STRING` empty**.
 2. First-time Telegram login (phone / code / 2FA, interactive TTY):
 
 ```bash
@@ -45,12 +45,12 @@ docker compose up -d
 ```
 
 - Service: `http://localhost:8000` (host port = `.env` `PORT`; container listens on **8000**)
-- Readiness: `http://localhost:8000/api/health`
+- Readiness: `http://localhost:8000/api/health` — JSON uses **`database`** and **`telegram`** (not `mongodb`; since 0.9+)
 - Swagger: `http://localhost:8000/docs`
 - Create S3 keys: log in with `INITIAL_ADMIN_*`, then `POST /api/v1/credentials`
 
 <details>
-<summary>App only (you already have MongoDB)</summary>
+<summary>App only (you already have MySQL)</summary>
 
 Set `DATABASE_URL` in `.env`, then:
 
@@ -61,7 +61,7 @@ docker run --rm -p 8000:8000 --env-file .env ghcr.io/beihehele/telezon-s3:${IMAG
 
 </details>
 
-**Requires:** Docker Compose, a [Telegram API application](https://my.telegram.org/apps), and a channel or group for storage (`CID`).
+**Requires:** Docker Compose, a [Telegram API application](https://my.telegram.org/apps), and a channel or group for storage (`CID`). On Windows, run the **Linux container** via Docker Desktop (no standalone `.exe` build from this project).
 
 ## Configuration
 
@@ -72,9 +72,10 @@ PROJECT_NAME='Telezon S3'
 PORT=8000
 SECRET_KEY=change-me
 
-MONGO_USER=admin
-MONGO_PASSWORD=change-me
-DATABASE_NAME=TelezonS3
+MYSQL_USER=telezon
+MYSQL_PASSWORD=change-me
+MYSQL_DATABASE=TelezonS3
+# Or: DATABASE_URL=mysql://user:pass@host:3306/TelezonS3  (URL-encode special chars in password)
 
 TELEGRAM_API_ID=
 TELEGRAM_API_HASH=

@@ -13,20 +13,21 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Verify poetry.lock (MySQL era)
+        run: python scripts/verify_poetry_lock.py
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          pip install poetry poetry-plugin-export
+          poetry export -f requirements.txt --output requirements.txt --without-hashes
           pip install -r requirements.txt
-          pip install pytest pytest-asyncio httpx mongomock-motor cryptography socksio "httpx[socks]"
+          pip install pytest pytest-asyncio httpx aiosqlite cryptography socksio "httpx[socks]"
       - name: Run tests
         env:
           PROJECT_NAME: telezon-test
           PORT: "8000"
           SECRET_KEY: test-secret
-          MONGO_HOST: localhost
-          MONGO_PORT: "27017"
-          DATABASE_NAME: telezon_test
-          DATABASE_URL: mongodb://localhost:27017
+          DATABASE_URL: sqlite+aiosqlite:///:memory:
           BOT_TOKEN: "0:test"
           CID: "123"
           TELEGRAM_API_ID: "1"
