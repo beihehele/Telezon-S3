@@ -48,9 +48,11 @@ TELEGRAM_API_ID=
 TELEGRAM_API_HASH=
 SESSION_STRING=
 CID=
-SECRET_KEY=...
+# SECRET_KEY: ≥16 caracteres; sustituye el valor de .env.example (los placeholders fallan al arrancar)
+SECRET_KEY=replace-with-openssl-rand-hex-32
 INITIAL_ADMIN_USER=admin
 INITIAL_ADMIN_PASSWORD=...
+# TELEGRAM_PROXY=socks5://192.168.1.10:7890  (en Docker/NAS, no uses 127.0.0.1)
 ```
 
 ## Uso

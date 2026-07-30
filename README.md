@@ -70,7 +70,8 @@ Use `.env` from `.env.example`. Common variables:
 ```env
 PROJECT_NAME='Telezon S3'
 PORT=8000
-SECRET_KEY=change-me
+# ≥16 chars; copy from .env.example then replace (placeholders are rejected at startup)
+SECRET_KEY=replace-with-openssl-rand-hex-32
 
 MYSQL_USER=telezon
 MYSQL_PASSWORD=change-me
@@ -85,9 +86,10 @@ CID=
 INITIAL_ADMIN_USER=admin
 INITIAL_ADMIN_PASSWORD=change-me
 
-# Optional: TELEGRAM_PROXY=socks5://127.0.0.1:1080
+# Docker/NAS: use LAN IP or host.docker.internal, not 127.0.0.1 inside the container
+# TELEGRAM_PROXY=socks5://192.168.1.10:7890
 # Optional: ENABLE_MGMT_BOT=1 and BOT_TOKEN=...
-# Optional: HEALTH_EXPOSE_ERRORS=0 on public URLs
+# Set HEALTH_EXPOSE_ERRORS=1 only when debugging /api/health
 ```
 
 Full list and defaults: `.env.example` in your deploy directory. The first admin user is created on startup; **default bucket name equals username**. Create S3 access keys via the REST API after login.

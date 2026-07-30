@@ -70,7 +70,8 @@ docker run --rm -p 8000:8000 --env-file .env ghcr.io/beihehele/telezon-s3:${IMAG
 ```env
 PROJECT_NAME='Telezon S3'
 PORT=8000
-SECRET_KEY=请改为强随机串
+# 至少 16 字符；从 .env.example 复制后改掉占位符（否则启动会失败）
+SECRET_KEY=replace-with-openssl-rand-hex-32
 
 MYSQL_USER=telezon
 MYSQL_PASSWORD=请修改
@@ -85,9 +86,9 @@ CID=
 INITIAL_ADMIN_USER=admin
 INITIAL_ADMIN_PASSWORD=请修改
 
-# 可选：TELEGRAM_PROXY=socks5://127.0.0.1:1080
-# 可选：ENABLE_MGMT_BOT=1 时需 BOT_TOKEN
-# 公网建议：HEALTH_EXPOSE_ERRORS=0
+# 家庭 NAS：代理在宿主机时用局域网 IP 或 host.docker.internal，勿在容器内写 127.0.0.1
+# 可选：TELEGRAM_PROXY=socks5://192.168.1.10:7890
+# 排障时可设 HEALTH_EXPOSE_ERRORS=1（默认不暴露 health 里的错误详情）
 ```
 
 完整变量见同目录 `.env.example`。首次启动会创建管理员；**默认桶名与用户名相同**。登录 REST 后创建 S3 凭证。运行时仅 **Pyrogram 账号模式**（不要用遗留的 bot 文件存储流程）。

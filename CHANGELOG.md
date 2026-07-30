@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Security / ops (personal / home NAS)
+- Startup rejects weak or missing `SECRET_KEY` (≥16 characters, no `.env.example` placeholders).
+- `HEALTH_EXPOSE_ERRORS` defaults to `0` (no error strings on `/api/health`); set `HEALTH_EXPOSE_ERRORS=1` if monitoring or scripts relied on the previous default.
+- SigV4 auth failures no longer log expected signature details.
+- Deploy docs: home NAS + `TELEGRAM_PROXY` (LAN IP / `host.docker.internal`); Compose `extra_hosts` for app and setup.
+
 ## 0.10.0 — 2026-07-30
 
 MySQL metadata store (breaking: no MongoDB migration; health `database` field). Docker/Linux deploy only.

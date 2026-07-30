@@ -11,7 +11,8 @@ import os
 
 os.environ.setdefault("PROJECT_NAME", "telezon-test")
 os.environ.setdefault("PORT", "8000")
-os.environ.setdefault("SECRET_KEY", "test-secret-key")
+# Always override: developer .env may set a short or placeholder SECRET_KEY.
+os.environ["SECRET_KEY"] = "pytest-secret-key-min-16b"
 os.environ.setdefault("MYSQL_HOST", "localhost")
 os.environ.setdefault("MYSQL_PORT", "3306")
 os.environ.setdefault("MYSQL_USER", "root")

@@ -26,7 +26,7 @@ jobs:
         env:
           PROJECT_NAME: telezon-test
           PORT: "8000"
-          SECRET_KEY: test-secret
+          SECRET_KEY: telezon-ci-secret-key-16b
           DATABASE_URL: sqlite+aiosqlite:///:memory:
           BOT_TOKEN: "0:test"
           CID: "123"

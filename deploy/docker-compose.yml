@@ -38,6 +38,8 @@ services:
   app:
     image: ghcr.io/beihehele/telezon-s3:${IMAGE_TAG:-latest}
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "${PORT:-8000}:8000"
     env_file:
@@ -62,6 +64,8 @@ services:
   setup:
     profiles: ["setup"]
     image: ghcr.io/beihehele/telezon-s3:${IMAGE_TAG:-latest}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     env_file:
       - .env
     stdin_open: true

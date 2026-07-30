@@ -26,6 +26,14 @@ cp .env.example .env
 | `BOT_TOKEN` | 仅 `ENABLE_MGMT_BOT=1` 时需要 |
 | `PORT` | 宿主机访问端口（Compose 映射为 `PORT:8000`，容器内固定 8000） |
 
+### 家庭 NAS + Telegram 代理
+
+国内或无法直连 Telegram 时，在 `.env` 设置 `TELEGRAM_PROXY`（SOCKS5/HTTP，见 `app/core/telegram_proxy.py`）。
+
+- **容器内不要用 `127.0.0.1`**：代理若在 NAS 宿主机上，应写 **局域网 IP**（如 `socks5://192.168.1.10:7890`），或 `socks5://host.docker.internal:7890`（Release 版 `docker-compose.yml` 已为 `app` / `setup` 配置 `extra_hosts: host.docker.internal:host-gateway`）。
+- 首次登录 Telegram 时 `setup` 容器同样需要能走代理，请保证 `TELEGRAM_PROXY` 在 `setup` 的 `env_file` 中已配置。
+- 单容器、单 worker、仅内网访问时，保持默认 `HEALTH_EXPOSE_ERRORS=0` 即可；需要排障时再临时设为 `1`。
+
 ### 使用已有 MySQL（不启动 Compose 里的 `db`）
 
 1. 在 MySQL 中预先创建空库（如 `TelezonS3`），并授予该用户建表与读写权限。
@@ -57,7 +65,7 @@ docker compose up -d
 
 - API 文档：`http://localhost:8000/docs`
 - 健康检查：`http://localhost:<PORT>/api/health`（`database.ok` 与 `telegram.ok` 均为 true 时为 200；**0.9+** 使用 `database`，不再返回 `mongodb`）
-- 公网部署建议 `HEALTH_EXPOSE_ERRORS=0`；内置 MySQL 默认仅绑定 `127.0.0.1:3306`，不需要本机直连时可删掉 `db.ports`
+- 默认不向健康检查响应暴露 `database.error` / `telegram.error`；排障时可设 `HEALTH_EXPOSE_ERRORS=1`。内置 MySQL 默认仅绑定 `127.0.0.1:3306`，不需要本机直连时可删掉 `db.ports`
 
 ## 5. 创建 S3 凭证
 
@@ -65,7 +73,7 @@ docker compose up -d
 
 ## 常见问题
 
-- **`database.ok: false`**：检查 `DATABASE_URL` / `MYSQL_*`、网络与账号权限；查看 `database.error`（未设 `HEALTH_EXPOSE_ERRORS=0` 时）。
+- **`database.ok: false`**：检查 `DATABASE_URL` / `MYSQL_*`、网络与账号权限；可设 `HEALTH_EXPOSE_ERRORS=1` 查看 `database.error`。
 - **`telegram.ok: false`**：检查 `.env` 中 `SESSION_STRING` 是否完整、无换行截断；会话失效则重新跑 setup。
 - **换 Telegram 账号**：重新执行 setup，更新 `SESSION_STRING` 后 `docker compose up -d` 重启 app。
 - **仅更新镜像**：`docker compose pull && docker compose up -d`。

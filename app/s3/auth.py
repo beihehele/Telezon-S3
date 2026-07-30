@@ -158,8 +158,8 @@ async def verify_sigv4(
     try:
         verifier.verify()
         return True
-    except InvalidSignatureError as exc:
-        logger.info("Invalid SigV4 signature: %s", exc)
+    except InvalidSignatureError:
+        logger.info("Invalid SigV4 signature")
         return False
     except Exception:
         logger.exception("Unable to verify SigV4 request")
