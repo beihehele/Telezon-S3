@@ -197,16 +197,6 @@ poetry run python download_file.py \
 
 > `make setup_bot_storage` remains in the Makefile for legacy scripts only.
 
-## Windows executable (optional)
-
-For local testing without a Python install, build a one-folder bundle with PyInstaller:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\build-exe.ps1
-```
-
-Output: `dist\Telezon-S3\Telezon-S3.exe`. Configure `dist\Telezon-S3\.env` and ensure MongoDB is reachable. Details: [README.zh-CN.md](README.zh-CN.md).
-
 ## GitHub Releases
 
 Pushing a version tag triggers packaging (same pattern as SaveAny-Bot):
