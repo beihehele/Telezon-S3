@@ -9,7 +9,11 @@ from app.core.config import logger
 from app.core.token import create_access_token, get_current_user
 from app.crud.bucket import crud_create_bucket
 from app.crud.shortcuts import check_free_bucket_name, check_free_username_and_email
-from app.crud.user import crud_create_user, crud_get_user_by_username
+from app.crud.user import (
+    crud_create_user,
+    crud_delete_user,
+    crud_get_user_by_username,
+)
 from app.db.mongodb import get_database
 from app.models.bucket import BucketInCreate
 from app.models.token import Token
@@ -48,7 +52,8 @@ async def signup(
     await check_free_username_and_email(db, user.username, user.email)
     new_user = await crud_create_user(db, user)
 
-    # create bucket to new user
+    # Default bucket matches username; roll back the user if bucket setup fails
+    # so clients never see an account without a usable home bucket.
     try:
         await check_free_bucket_name(db, user.username)
         bucket = BucketInCreate(
@@ -57,7 +62,24 @@ async def signup(
         )
         await crud_create_bucket(db, bucket, User(**new_user.model_dump()))
     except Exception as e:
-        logger.error("Error creating bucket: %s", e)
+        logger.error("Error creating default bucket for %s: %s", user.username, e)
+        try:
+            await crud_delete_user(db, user.username)
+        except Exception as cleanup_err:
+            logger.error(
+                "Failed to roll back user %s after bucket error: %s",
+                user.username,
+                cleanup_err,
+            )
+        if isinstance(e, HTTPException):
+            raise HTTPException(
+                status_code=HTTP_400_BAD_REQUEST,
+                detail="Signup failed while creating default bucket",
+            ) from e
+        raise HTTPException(
+            status_code=HTTP_400_BAD_REQUEST,
+            detail="Signup failed while creating default bucket",
+        ) from e
 
     return new_user
 

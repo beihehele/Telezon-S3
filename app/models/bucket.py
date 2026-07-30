@@ -1,3 +1,5 @@
+from typing import Optional
+
 from pydantic import BaseModel, Field
 
 from app.models.db_model import DateTimeModelMixin
@@ -13,16 +15,16 @@ class BucketFilterParams(BaseModel):
 
 class BucketBase(BaseModel):
     name: str
+    is_public: bool = False
+    telegram_chat_id: Optional[str] = None
+    telegram_topic_id: Optional[int] = None
 
 
 class BucketInDb(BucketBase, DateTimeModelMixin):
     owner_username: str = ""
 
 
-class Bucket(
-    BucketBase,
-    DateTimeModelMixin,
-):
+class Bucket(BucketBase, DateTimeModelMixin):
     owner: User
     size: int = 0
 
@@ -32,4 +34,7 @@ class BucketInCreate(BucketBase):
 
 
 class BucketInUpdate(BaseModel):
-    owner_username: str
+    owner_username: Optional[str] = None
+    is_public: Optional[bool] = None
+    telegram_chat_id: Optional[str] = None
+    telegram_topic_id: Optional[int] = None

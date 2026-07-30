@@ -2,6 +2,25 @@
 
 Telezon S3 is a storage service compatible with Amazon S3 API that uses Telegram as a storage backend. It allows storing and retrieving files using standard S3 clients.
 
+**Current tree:** S3 + multipart + shares (see [`CHANGELOG.md`](CHANGELOG.md) Unreleased). Last tagged release: **1.0.0**. Compatibility matrix: [`docs/S3-COMPAT.md`](docs/S3-COMPAT.md). Auth/upload/sharing guide: [`docs/AUTH-AND-SHARING.md`](docs/AUTH-AND-SHARING.md).
+
+[![CI](https://github.com/beihehele/Telezon-S3/actions/workflows/ci.yml/badge.svg)](https://github.com/beihehele/Telezon-S3/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/beihehele/Telezon-S3)](https://github.com/beihehele/Telezon-S3/releases)
+[![GHCR](https://img.shields.io/badge/ghcr.io-beihehele%2Ftelezon--s3-blue)](https://github.com/beihehele/Telezon-S3/pkgs/container/telezon-s3)
+
+> Account-mode deployments must run a **single worker** (`Dockerfile` default). Do not scale to multiple processes with the same `SESSION_STRING`.
+
+## Quick start (published image)
+
+```bash
+docker pull ghcr.io/beihehele/telezon-s3:latest
+cp .env.example .env
+# edit .env
+IMAGE_TAG=latest docker compose up -d
+```
+
+Image tags published on each `v*` GitHub tag: `latest`, `x.y.z`, `x.y`, `sha-<commit>`.
+
 ## Docker Deployment
 
 The easiest way to run Telezon S3 is using Docker Compose:
@@ -29,6 +48,8 @@ The interactive API documentation is available through Swagger UI. You can acces
 ```
 http://localhost:8000/docs
 ```
+
+S3 operation coverage for this release is listed in [`docs/S3-COMPAT.md`](docs/S3-COMPAT.md).
 
 ## Development Requirements
 
@@ -68,6 +89,8 @@ CID=your_channel_id
 TELEGRAM_API_ID=your_api_id
 TELEGRAM_API_HASH=your_api_hash
 SESSION_STRING=your_session_string
+# Optional outbound proxy (SOCKS5 recommended)
+# TELEGRAM_PROXY=socks5://user:pass@127.0.0.1:1080
 ```
 
 ### Initial Admin User
@@ -95,19 +118,15 @@ poetry install
 make dev
 ```
 
-### Telegram Bot and Channel Setup
+### Telegram storage setup
 
-1. Configure storage using `pyrogram` (Recommended):
+Account mode (Pyrogram) is the **only** runtime backend:
 
 ```bash
 make setup_account_storage
 ```
 
-2. Configure storage using `python-telegram-bot` (Not recommended):
-
-```bash
-make setup_bot_storage
-```
+> Bot API storage (`make setup_bot_storage`) is legacy and is **not** selected by the server. Do not use it for new deployments.
 
 ## Usage
 
@@ -157,9 +176,26 @@ poetry run python download_file.py \
 - `make dev`: Start server in development mode
 - `make run`: Start server in production mode
 - `make format`: Format code using ruff
-- `make setup_bot_storage`: Set up bot storage
-- `make setup_account_storage`: Set up account storage
+- `make setup_account_storage`: Set up Telegram account (Pyrogram) session
 - `make export`: Export dependencies to requirements.txt
+
+> `make setup_bot_storage` remains in the Makefile for legacy scripts only.
+
+## GitHub Releases
+
+Pushing a version tag triggers packaging (same pattern as SaveAny-Bot):
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+This runs:
+
+1. **Build Release** — creates a GitHub Release, attaches source archives + docs, fills notes via `changelogithub`
+2. **Build and Publish Docker Image** — pushes to `ghcr.io/beihehele/telezon-s3`
+
+First-time GHCR note: if the package is private, grant pull access or set the package visibility to Public under GitHub → Packages.
 
 ## Features
 

@@ -9,6 +9,9 @@ services:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
   app:
+    # Prefer published image when IMAGE_TAG is set, otherwise build locally.
+    # Example: IMAGE_TAG=latest docker compose up -d
+    image: ghcr.io/beihehele/telezon-s3:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: Dockerfile

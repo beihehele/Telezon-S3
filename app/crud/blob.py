@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import List
 
 from bson import ObjectId
@@ -71,10 +72,59 @@ async def crud_create_blob(
         data_blob.created_at = ObjectId(row.inserted_id).generation_time
         data_blob.updated_at = ObjectId(row.inserted_id).generation_time
     else:
-        updated_at = await db[DATABASE_NAME][COLLECTION].update_one(
-            {"path": data_blob.path}, {"$set": data_blob.model_dump()}
+        now = datetime.now(timezone.utc)
+        data_blob.updated_at = now
+        await db[DATABASE_NAME][COLLECTION].update_one(
+            {"path": data_blob.path, "bucket_name": bucket_name},
+            {"$set": data_blob.model_dump()},
         )
 
-        data_blob.updated_at = updated_at
-
     return data_blob
+
+
+async def crud_delete_blob(
+    db: AsyncIOMotorClient, bucket_name: str, path: str
+) -> BlobInDb | None:
+    row = await db[DATABASE_NAME][COLLECTION].find_one_and_delete(
+        {"bucket_name": bucket_name, "path": path}
+    )
+    if not row:
+        return None
+    return BlobInDb(**row)
+
+
+async def crud_list_blobs_for_s3(
+    db: AsyncIOMotorClient,
+    bucket_name: str,
+    prefix: str = "",
+    start_after: str = "",
+    max_keys: int = 1000,
+) -> List[BlobInDb]:
+    query: dict = {"bucket_name": bucket_name}
+    path_query: dict = {}
+
+    if prefix:
+        path_query["$regex"] = f"^{_escape_regex(prefix)}"
+
+    if start_after:
+        path_query["$gt"] = start_after
+
+    if path_query:
+        query["path"] = path_query
+
+    cursor = (
+        db[DATABASE_NAME][COLLECTION]
+        .find(query)
+        .sort("path", 1)
+        .limit(max_keys)
+    )
+
+    blobs: List[BlobInDb] = []
+    async for row in cursor:
+        blobs.append(BlobInDb(**row))
+    return blobs
+
+
+def _escape_regex(value: str) -> str:
+    specials = r"\.^$|*+?()[]{}\\"
+    return "".join("\\" + ch if ch in specials else ch for ch in value)

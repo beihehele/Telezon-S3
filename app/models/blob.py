@@ -1,4 +1,6 @@
-from pydantic import BaseModel
+from typing import Any, Optional
+
+from pydantic import BaseModel, Field
 
 from app.models.bucket import BucketBase
 from app.models.db_model import DateTimeModelMixin
@@ -12,11 +14,24 @@ class BlobFilterParams(BaseModel):
     offset: int = 0
 
 
+class BlobPart(BaseModel):
+    part_number: int
+    file_id: str
+    size: int = 0
+    message_id: int | None = None
+    etag: str = ""
+
+
 class BlobBase(BaseModel):
     path: str
     file: str = ""
     content_type: str = ""
     size: int = 0
+    message_id: int | None = None
+    parts: Optional[list[BlobPart]] = None
+    sse_nonce: Optional[str] = None
+    sse_tag: Optional[str] = None
+    encrypted: bool = False
 
 
 class BlobInDb(BlobBase, DateTimeModelMixin):

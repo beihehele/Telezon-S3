@@ -70,7 +70,7 @@ async def create_user(
 
     new_user = await crud_create_user(db, user)
 
-    # create bucket to new user
+    # Default bucket matches username; roll back the user if setup fails.
     try:
         await check_free_bucket_name(db, user.username)
         bucket = BucketInCreate(
@@ -79,7 +79,19 @@ async def create_user(
         )
         await crud_create_bucket(db, bucket, current_user)
     except Exception as exc:
-        logger.error(exc)
+        logger.error("Error creating default bucket for %s: %s", user.username, exc)
+        try:
+            await crud_delete_user(db, user.username)
+        except Exception as cleanup_err:
+            logger.error(
+                "Failed to roll back user %s after bucket error: %s",
+                user.username,
+                cleanup_err,
+            )
+        raise HTTPException(
+            status_code=400,
+            detail="User create failed while creating default bucket",
+        ) from exc
 
     return new_user
 

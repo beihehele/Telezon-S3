@@ -6,24 +6,37 @@ from fastapi.exceptions import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.status import HTTP_422_UNPROCESSABLE_ENTITY
 
+from app.bot.mgmt import start_mgmt_bot_if_enabled, stop_mgmt_bot
 from app.api import router as api_router
-from app.core.config import PROJECT_NAME
+from app.api.v1.endpoints.shares import share_public_router
+from app.core.config import PROJECT_NAME, logger
 from app.core.errors import http_422_error_handler, http_error_handler
 from app.db.mongodb import close_mongodb_connection, connect_to_mongodb
+from app.ops.gc import start_gc_if_enabled, stop_gc
 from app.s3 import router as s3_router
+from app.s3.middleware import AmzRequestIdMiddleware
+from app.storage.telegram.account_client import account_client_manager
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Connect to MongoDB
     await connect_to_mongodb()
+    try:
+        await account_client_manager.start()
+    except Exception:
+        logger.exception("Failed to start Telegram account client")
+    await start_mgmt_bot_if_enabled()
+    await start_gc_if_enabled()
     yield
-    # Disconnect from MongoDB
+    await stop_gc()
+    await stop_mgmt_bot()
+    await account_client_manager.stop()
     await close_mongodb_connection()
 
 
 app = FastAPI(title=PROJECT_NAME, lifespan=lifespan)
 
+app.add_middleware(AmzRequestIdMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -35,5 +48,7 @@ app.add_middleware(
 app.add_exception_handler(HTTPException, http_error_handler)
 app.add_exception_handler(HTTP_422_UNPROCESSABLE_ENTITY, http_422_error_handler)
 
-app.include_router(s3_router)
+# Fixed-path routers before S3 catch-alls (/{bucket}/{key}).
 app.include_router(api_router)
+app.include_router(share_public_router)
+app.include_router(s3_router)
