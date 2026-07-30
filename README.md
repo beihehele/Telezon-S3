@@ -1,8 +1,10 @@
 # Telezon S3
 
+**English** · [简体中文](README.zh-CN.md) · [Español](README.es.md)
+
 Telezon S3 is a storage service compatible with Amazon S3 API that uses Telegram as a storage backend. It allows storing and retrieving files using standard S3 clients.
 
-**Current tree:** S3 + multipart + shares (see [`CHANGELOG.md`](CHANGELOG.md) Unreleased). Last tagged release: **1.0.0**. Compatibility matrix: [`docs/S3-COMPAT.md`](docs/S3-COMPAT.md). Auth/upload/sharing guide: [`docs/AUTH-AND-SHARING.md`](docs/AUTH-AND-SHARING.md).
+**Current release:** see [GitHub Releases](https://github.com/beihehele/Telezon-S3/releases) and GHCR tags. Compatibility matrix: [`docs/S3-COMPAT.md`](docs/S3-COMPAT.md). Auth/upload/sharing: [`docs/AUTH-AND-SHARING.md`](docs/AUTH-AND-SHARING.md) (included in release archives).
 
 [![CI](https://github.com/beihehele/Telezon-S3/actions/workflows/ci.yml/badge.svg)](https://github.com/beihehele/Telezon-S3/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/beihehele/Telezon-S3)](https://github.com/beihehele/Telezon-S3/releases)
@@ -10,36 +12,57 @@ Telezon S3 is a storage service compatible with Amazon S3 API that uses Telegram
 
 > Account-mode deployments must run a **single worker** (`Dockerfile` default). Do not scale to multiple processes with the same `SESSION_STRING`.
 
-## Quick start (published image)
+## Production deployment (no git clone)
+
+Use a working directory with **`.env`** and **`docker-compose.yml`** from a release. Images are pulled from GHCR.
+
+### 1. Prepare files
 
 ```bash
-docker pull ghcr.io/beihehele/telezon-s3:latest
+mkdir telezon-s3 && cd telezon-s3
+VERSION=x.y.z   # from Releases (without the v prefix)
+curl -fsSLO "https://github.com/beihehele/Telezon-S3/releases/download/v${VERSION}/.env.example"
+curl -fsSLO "https://github.com/beihehele/Telezon-S3/releases/download/v${VERSION}/docker-compose.yml"
+curl -fsSLO "https://github.com/beihehele/Telezon-S3/releases/download/v${VERSION}/setup-telegram.sh"
 cp .env.example .env
 # edit .env
-IMAGE_TAG=latest docker compose up -d
 ```
 
-Image tags published on each `v*` GitHub tag: `latest`, `x.y.z`, `x.y`, `sha-<commit>`.
+Full guide (Chinese): [docs/DEPLOY.zh-CN.md](docs/DEPLOY.zh-CN.md).
 
-## Docker Deployment
+### 2. Configure `.env` (do not `up -d` yet)
 
-The easiest way to run Telezon S3 is using Docker Compose:
+Set `TELEGRAM_API_ID` / `TELEGRAM_API_HASH` from [my.telegram.org](https://my.telegram.org/apps). Leave **`SESSION_STRING` empty** until step 3. Change `SECRET_KEY`, Mongo passwords, and `INITIAL_ADMIN_PASSWORD`.
 
-1. Clone the repository
-2. Copy the environment variables file:
+### 3. First-time Telegram login (interactive, requires TTY)
 
 ```bash
-cp .env.example .env
+export IMAGE_TAG=${VERSION:-latest}
+docker compose pull
+docker compose --profile setup run --rm setup
 ```
 
-3. Configure the variables in the `.env` file
-4. Start the services:
+Copy the printed `SESSION_STRING=...` into `.env`. Optional: use `setup-telegram.sh` / `setup-telegram.ps1` from the release assets.
+
+### 4. Start
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
-The service will be available at `http://localhost:8000`
+Service: `http://localhost:8000`. Readiness: `http://localhost:8000/api/health` (HTTP 200 when Mongo and Telegram are OK). In the release Compose file, **`.env` `PORT` is the host port**; the container always listens on **8000**.
+
+<details>
+<summary>App only (external MongoDB)</summary>
+
+```bash
+docker pull ghcr.io/beihehele/telezon-s3:${IMAGE_TAG:-latest}
+docker run --rm -p 8000:8000 --env-file .env ghcr.io/beihehele/telezon-s3:${IMAGE_TAG:-latest}
+```
+
+Image tags on each `v*` release: `latest`, `x.y.z`, `x.y`, `sha-<commit>`.
+
+</details>
 
 ## API Documentation
 
@@ -61,12 +84,7 @@ S3 operation coverage for this release is listed in [`docs/S3-COMPAT.md`](docs/S
 
 ## Configuration
 
-1. Clone the repository
-2. Copy the `.env.example` file to `.env` and configure the environment variables:
-
-```bash
-cp .env.example .env
-```
+For deployments, use `.env` copied from the release `.env.example`. Clone the repo only if you develop from source.
 
 ### Important Environment Variables
 
@@ -106,13 +124,11 @@ These credentials will be used to automatically create the first admin user in t
 
 ## Development
 
-1. Install dependencies:
+Clone the repository, then:
 
 ```bash
 poetry install
 ```
-
-2. Start the server in development mode:
 
 ```bash
 make dev
@@ -180,6 +196,16 @@ poetry run python download_file.py \
 - `make export`: Export dependencies to requirements.txt
 
 > `make setup_bot_storage` remains in the Makefile for legacy scripts only.
+
+## Windows executable (optional)
+
+For local testing without a Python install, build a one-folder bundle with PyInstaller:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build-exe.ps1
+```
+
+Output: `dist\Telezon-S3\Telezon-S3.exe`. Configure `dist\Telezon-S3\.env` and ensure MongoDB is reachable. Details: [README.zh-CN.md](README.zh-CN.md).
 
 ## GitHub Releases
 

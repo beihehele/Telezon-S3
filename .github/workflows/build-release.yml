@@ -49,8 +49,13 @@ jobs:
             telezon-s3-${{ steps.vars.outputs.version }}-src.zip
             LICENSE
             README.md
+            README.zh-CN.md
             CHANGELOG.md
             .env.example
+            deploy/docker-compose.yml
+            deploy/setup-telegram.sh
+            deploy/setup-telegram.ps1
+            docs/DEPLOY.zh-CN.md
 
       - name: Setup Node
         uses: actions/setup-node@v4

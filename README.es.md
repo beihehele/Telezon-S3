@@ -1,10 +1,32 @@
 # Telezon S3
 
+[English](README.md) · [简体中文](README.zh-CN.md) · **Español**
+
 Telezon S3 es un servicio de almacenamiento compatible con la API de Amazon S3 que utiliza Telegram como backend de almacenamiento. Permite almacenar y recuperar archivos utilizando clientes S3 estándar.
 
-## Despliegue con Docker
+## Despliegue en producción (sin clonar el repositorio)
 
-La forma más sencilla de ejecutar Telezon S3 es utilizando Docker Compose:
+Descarga los archivos del [Release](https://github.com/beihehele/Telezon-S3/releases) (`docker-compose.yml`, `.env.example`, scripts de setup).
+
+```bash
+mkdir telezon-s3 && cd telezon-s3
+VERSION=x.y.z
+curl -fsSLO "https://github.com/beihehele/Telezon-S3/releases/download/v${VERSION}/.env.example"
+curl -fsSLO "https://github.com/beihehele/Telezon-S3/releases/download/v${VERSION}/docker-compose.yml"
+cp .env.example .env
+# TELEGRAM_API_ID / TELEGRAM_API_HASH; deja SESSION_STRING vacío
+export IMAGE_TAG=${VERSION:-latest}
+docker compose pull
+docker compose --profile setup run --rm setup
+# pega SESSION_STRING en .env, luego:
+docker compose up -d
+```
+
+Guía detallada en chino: [docs/DEPLOY.zh-CN.md](docs/DEPLOY.zh-CN.md).
+
+## Desarrollo (clonar repositorio)
+
+Para desarrollo local, clona el repo y usa Docker Compose en la raíz del proyecto:
 
 1. Clona el repositorio
 2. Copia el archivo de variables de entorno:

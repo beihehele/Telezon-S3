@@ -85,3 +85,6 @@ TRASH_RETENTION_SECONDS = int(
 # Share password brute-force protection
 SHARE_MAX_FAILED_ATTEMPTS = int(os.getenv("SHARE_MAX_FAILED_ATTEMPTS", "5"))
 SHARE_LOCKOUT_SECONDS = int(os.getenv("SHARE_LOCKOUT_SECONDS", "900"))
+
+# When 0, /api/health omits error detail strings (safer on public endpoints).
+HEALTH_EXPOSE_ERRORS = os.getenv("HEALTH_EXPOSE_ERRORS", "1") == "1"

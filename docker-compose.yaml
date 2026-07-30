@@ -1,3 +1,5 @@
+# Local development only (build from repo). Production deploy: deploy/docker-compose.yml (+ Release assets).
+
 services:
   db:
     image: mongo:latest

@@ -2,6 +2,11 @@ venv/
 *.pyc
 __pycache__/
 .pytest_cache/
+build/
+dist/
+packaging/build.log
+packaging/exe-stdout.log
+packaging/exe-stderr.log
 .vscode/
 .idea/
 .env

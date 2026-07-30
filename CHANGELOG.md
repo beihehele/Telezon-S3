@@ -32,6 +32,10 @@
   Complete bodies
 - Soft-delete inserts trash before removing the live blob row
 - CopyObject enforces scoped read on same-account source buckets; docs clarify public-bucket semantics
+- Release `docker-compose.yml`, setup scripts, and `docs/DEPLOY.zh-CN.md` for clone-free Compose deploy
+- Interactive Telegram login: `docker compose --profile setup run --rm setup`
+- `GET /api/health` (Mongo + Telegram readiness); set `HEALTH_EXPOSE_ERRORS=0` to hide error text on public URLs
+- Ignore placeholder `SESSION_STRING` values from `.env.example`; clearer errors when Telegram env is missing
 
 ## 1.0.0 — 2026-07-29
 - S3 protocol completeness: Delete, ListObjectsV2, ListBuckets, HEAD fix, Presign GET/PUT

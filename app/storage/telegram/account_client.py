@@ -7,6 +7,7 @@ from app.core.config import (
     TELEGRAM_API_ID,
     TELEGRAM_PROXY,
 )
+from app.core.telegram_session import effective_session_string
 
 logger = logging.getLogger(__name__)
 
@@ -28,11 +29,26 @@ class TelegramAccountClientManager:
 
         from pyrogram import Client
 
+        session = effective_session_string(SESSION_STRING)
+        if not session:
+            raise ValueError(
+                "SESSION_STRING is not set. Run setup_account_storage.py "
+                "(or docker compose --profile setup run --rm setup) first."
+            )
+        if not TELEGRAM_API_ID or not TELEGRAM_API_HASH:
+            raise ValueError(
+                "TELEGRAM_API_ID and TELEGRAM_API_HASH must be set in .env"
+            )
+        try:
+            api_id = int(str(TELEGRAM_API_ID).strip())
+        except ValueError as exc:
+            raise ValueError("TELEGRAM_API_ID must be a number") from exc
+
         kwargs = {
             "name": "telegram",
-            "api_id": TELEGRAM_API_ID,
+            "api_id": api_id,
             "api_hash": TELEGRAM_API_HASH,
-            "session_string": SESSION_STRING,
+            "session_string": session,
             "in_memory": True,
         }
         if TELEGRAM_PROXY is not None:

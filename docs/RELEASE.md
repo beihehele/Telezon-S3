@@ -15,15 +15,34 @@ Tags must match `v*` (e.g. `v1.0.0`, `v1.2.3-rc.1`). Prerelease tags containing 
 
 | Workflow | File | Output |
 |----------|------|--------|
-| Build Release | `.github/workflows/build-release.yml` | GitHub Release + source `.tar.gz`/`.zip` + LICENSE/README/CHANGELOG/`.env.example`; notes via `changelogithub` |
+| Build Release | `.github/workflows/build-release.yml` | GitHub Release + source archives + `.env.example` + `docker-compose.yml` + setup scripts + `README.zh-CN.md` + `docs/DEPLOY.zh-CN.md`; notes via `changelogithub` |
 | Build and Publish Docker Image | `.github/workflows/build-docker.yml` | `ghcr.io/beihehele/telezon-s3` tags: `latest`, `x.y.z`, `x.y`, `sha-<short>` |
 | CI | `.github/workflows/ci.yml` | pytest on push/PR (does not publish) |
 
 ## Consume image
 
+No git clone required for production:
+
 ```bash
-docker pull ghcr.io/beihehele/telezon-s3:1.0.0
-IMAGE_TAG=1.0.0 docker compose up -d
+mkdir telezon-s3 && cd telezon-s3
+VERSION=x.y.z
+curl -fsSLO "https://github.com/beihehele/Telezon-S3/releases/download/v${VERSION}/.env.example"
+curl -fsSLO "https://github.com/beihehele/Telezon-S3/releases/download/v${VERSION}/docker-compose.yml"
+cp .env.example .env
+# edit TELEGRAM_API_ID / TELEGRAM_API_HASH; leave SESSION_STRING empty
+export IMAGE_TAG=${VERSION:-latest}
+docker compose pull
+docker compose --profile setup run --rm setup
+# paste SESSION_STRING into .env, then:
+docker compose up -d
+```
+
+See [DEPLOY.zh-CN.md](DEPLOY.zh-CN.md) for the full Compose guide.
+
+Or pull only:
+
+```bash
+docker pull ghcr.io/beihehele/telezon-s3:${VERSION:-latest}
 ```
 
 ## Permissions
