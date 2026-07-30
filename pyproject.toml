@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "telezons3"
-version = "1.0.0"
+version = "0.9.0"
 description = ""
 authors = ["Luis Ciber <luisciber640@gmail.com>"]
 license = "MIT"

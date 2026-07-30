@@ -5,19 +5,28 @@ Aligned with SaveAny-Bot: tag-driven Release + GHCR image publish.
 ## Trigger
 
 ```bash
-git tag v1.0.1
-git push origin v1.0.1
+git tag v0.9.0
+git push origin v0.9.0
 ```
 
-Tags must match `v*` (e.g. `v1.0.0`, `v1.2.3-rc.1`). Prerelease tags containing `-` mark the GitHub Release as prerelease.
+Tags must match `v*` (e.g. `v0.9.0`, `v1.0.0`, `v1.2.3-rc.1`). Prerelease tags containing `-` mark the GitHub Release as prerelease.
 
 ## Workflows
 
 | Workflow | File | Output |
 |----------|------|--------|
 | Build Release | `.github/workflows/build-release.yml` | GitHub Release + source archives + `.env.example` + `docker-compose.yml` + setup scripts + `README.zh-CN.md` + `docs/DEPLOY.zh-CN.md`; notes via `changelogithub` |
-| Build and Publish Docker Image | `.github/workflows/build-docker.yml` | `ghcr.io/beihehele/telezon-s3` tags: `latest`, `x.y.z`, `x.y`, `sha-<short>` |
+| Build and Publish Docker Image | `.github/workflows/build-docker.yml` | `ghcr.io/beihehele/telezon-s3` **linux/amd64** + **linux/arm64**; tags: `latest`, `x.y.z`, `x.y`, `sha-<short>` |
 | CI | `.github/workflows/ci.yml` | pytest on push/PR (does not publish) |
+
+### Container platforms
+
+| Platform | Dockerfile | Typical use |
+|----------|------------|-------------|
+| `linux/amd64` | `Dockerfile` (Alpine) | x86_64 Linux; Docker Desktop on Intel Mac / Windows |
+| `linux/arm64` | `Dockerfile` (Alpine) | ARM64 Linux; Apple Silicon with Linux containers |
+
+On Windows or macOS, use Docker Desktop (Linux containers) with the release `docker-compose.yml`.
 
 ## Consume image
 

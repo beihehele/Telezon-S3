@@ -1,4 +1,4 @@
-# S3 Compatibility Matrix (Telezon-S3 1.1+)
+# S3 Compatibility Matrix (Telezon-S3 0.9+)
 
 Path-style endpoint: `http://host:port/{bucket}/{key}`
 

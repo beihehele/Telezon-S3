@@ -1,50 +1,49 @@
 # Changelog
 
 ## Unreleased
-- DeleteObjects (`POST ?delete` + Content-MD5)
-- GetObject/HeadObject Range + conditional headers (If-Match / If-None-Match / …)
-- Unsupported S3 sub-resources return 501 (no PutObject fall-through)
-- Background GC for stale multipart uploads and expired shares (`ENABLE_GC`)
-- CopyObject (`x-amz-copy-source`)
-- ListMultipartUploads (`GET ?uploads`), GetBucketLocation stub
-- HeadBucket / CreateBucket / DeleteBucket (empty only)
-- Share password lockout (`SHARE_MAX_FAILED_ATTEMPTS`, `SHARE_LOCKOUT_SECONDS`)
-- Bearer simple upload: `PUT /api/v1/upload/?bucket=&key=`
-- Mount `/api` and `/share` before S3 catch-alls
-- Fix blob overwrite `updated_at` (was UpdateResult)
-- Cap CopyObject / share links at `MAX_UPLOAD_BYTES` (in-memory paths)
-- Faster bucket size aggregate (no full blob materialization)
-- REST bucket create/update aligned with S3: owners manage own buckets
-- Remove unused `API_KEY` and admin-only `/api/v1/blobs`
-- Document auth/upload/sharing choices in `docs/AUTH-AND-SHARING.md`
-- Multi-credential RBAC (`readonly`/`readwrite`, optional bucket scope) via `/api/v1/credentials`
-- ListObjectsV2 `delimiter` / CommonPrefixes; GetBucketVersioning stub
-- `x-amz-request-id` / `x-amz-id-2` middleware
-- GC: retry pending TG deletes + sample dead blob metadata (`GC_ORPHAN_SAMPLE_SIZE`)
-- Soft delete / trash: DeleteObject defaults to trash; restore via `/api/v1/trash`;
-  `x-telezon-bypass-trash: true` for hard delete; GC purges expired trash
-- Overwrite paths (PutObject / CompleteMultipart / Bearer upload) use the same trash lifecycle
-- S3 auth errors: `AccessDenied` / `InvalidAccessKeyId` vs `SignatureDoesNotMatch` when identity is known
-- Signup rolls back the user if default bucket creation fails
-- GC orphan sampler only deletes metadata on confirmed TG-gone errors
-  (skips throttle / unavailable / unknown)
-- Pre-auth identity+RBAC before buffering Put / UploadPart / DeleteObjects /
-  Complete bodies
-- Soft-delete inserts trash before removing the live blob row
-- CopyObject enforces scoped read on same-account source buckets; docs clarify public-bucket semantics
-- Release `docker-compose.yml`, setup scripts, and `docs/DEPLOY.zh-CN.md` for clone-free Compose deploy
-- Interactive Telegram login: `docker compose --profile setup run --rm setup`
-- `GET /api/health` (Mongo + Telegram readiness); set `HEALTH_EXPOSE_ERRORS=0` to hide error text on public URLs
-- Ignore placeholder `SESSION_STRING` values from `.env.example`; clearer errors when Telegram env is missing
 
-## 1.0.0 — 2026-07-29
-- S3 protocol completeness: Delete, ListObjectsV2, ListBuckets, HEAD fix, Presign GET/PUT
-- Reliable transport: long-lived TG client, rate limit, upload size cap, workers=1
-- Isolation: public buckets, share links, per-bucket Telegram chat/topic
-- Large files: multipart upload lifecycle, optional disk cache, Local Bot API base URL
-- Security/ops: SSE-C (AES-GCM), i18n S3 errors, CI workflow, optional mgmt bot hooks
-- Telegram SOCKS5/HTTP proxy via `TELEGRAM_PROXY`
-- GitHub Release + GHCR publish workflows (`v*` tags)
+## 0.9.0 — 2026-07-30
+
+Feature-complete preview: S3-compatible gateway with Telegram (Pyrogram account) storage, REST control plane, and Docker Compose deploy.
+
+### S3 API
+- PutObject / GetObject / HeadObject / DeleteObject; ListBuckets; ListObjectsV2 (prefix, delimiter, CommonPrefixes)
+- CopyObject (`x-amz-copy-source`); DeleteObjects (`POST ?delete` + Content-MD5)
+- Multipart: Create / UploadPart / Complete / Abort / ListParts / ListMultipartUploads
+- Presigned GET/PUT (`POST /api/v1/presign`); Range GET; conditional GET/HEAD headers
+- HeadBucket / CreateBucket / DeleteBucket (empty only); GetBucketLocation / GetBucketVersioning stubs
+- Public buckets (anonymous Get/Head); per-bucket Telegram chat/topic
+- SSE-C (AES-GCM); unsupported sub-resources return **501** (no PutObject fall-through)
+- SigV4 auth with `AccessDenied` / `InvalidAccessKeyId` / `SignatureDoesNotMatch`; pre-auth before buffering large bodies
+- `x-amz-request-id` / `x-amz-id-2` middleware; `APP_LANG` for S3 error messages
+
+### Trash & data lifecycle
+- Soft delete: DeleteObject / DeleteObjects default to trash; restore via `/api/v1/trash`
+- `x-telezon-bypass-trash: true` and `ENABLE_TRASH=0` for hard delete; trash inserted before live row removal
+- Overwrites (PutObject, CopyObject, CompleteMultipart, Bearer upload) retire previous version via trash
+- CopyObject: scoped read on same-account sources; cross-account only when source bucket is public
+
+### REST & credentials
+- Users, buckets, multi-credential RBAC (`readonly` / `readwrite`, optional bucket scope) via `/api/v1/credentials`
+- Share links (password + lockout); Bearer simple upload `PUT /api/v1/upload/`
+- Signup rolls back user if default bucket creation fails; owners manage own buckets
+- Removed unused `API_KEY` and admin-only `/api/v1/blobs` listing
+- Docs: `docs/AUTH-AND-SHARING.md`, `docs/S3-COMPAT.md`
+
+### Telegram storage & reliability
+- Account-mode Pyrogram backend only; single worker / shared `SESSION_STRING`
+- Rate limiting, `MAX_UPLOAD_BYTES`, long-lived client; optional `TELEGRAM_PROXY`, Local Bot API base URL, disk cache
+- Optional management bot (`ENABLE_MGMT_BOT`)
+
+### Background operations
+- GC: stale multipart uploads, expired shares, trash retention, pending TG deletes, orphan metadata sampler (confirmed-gone only)
+
+### Deploy & release
+- Clone-free production: Release assets (`docker-compose.yml`, `.env.example`, setup scripts, `docs/DEPLOY.zh-CN.md`, `README.zh-CN.md`)
+- Interactive first login: `docker compose --profile setup run --rm setup`; `GET /api/health`; `HEALTH_EXPOSE_ERRORS`
+- Session placeholder detection in `.env.example`; GitHub Release + GHCR on `v*` tags
+- CI (pytest on push/PR); Docker publish on `v*` tags
+- Multi-platform GHCR images: `linux/amd64`, `linux/arm64` (see `docs/RELEASE.md`)
 
 ## 0.1.0 — 2024-11
 - Initial FastAPI + Mongo + Telegram S3 gateway (PUT/GET/HEAD)
