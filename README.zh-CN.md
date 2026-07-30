@@ -216,28 +216,6 @@ poetry run python download_file.py \
   --bucket-name 桶名 --input-path remote.txt --output-path local.txt
 ```
 
-## Windows 可执行文件（测试 / 内网）
-
-可使用 PyInstaller 从**源码包**打成单目录包（需克隆或解压 Release 源码归档）：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\build-exe.ps1
-```
-
-产物：`dist\Telezon-S3\Telezon-S3.exe`（需连同同目录下 `_internal` 等文件一起拷贝）。
-
-1. 编辑 `dist\Telezon-S3\.env`（Mongo 须可达；可用上文 Compose 仅启动 `db`：`docker compose up -d db`）  
-2. 运行 `.\Telezon-S3.exe`  
-3. 浏览器打开 `http://127.0.0.1:8000/docs`
-
-自动冒烟（依赖 Mongo 已启动）：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\test-exe.ps1
-```
-
-说明：exe 需自行从源码构建（见 `scripts/build-exe.ps1`）；日常生产环境推荐使用 GHCR 镜像部署。
-
 ## 贡献
 
 欢迎通过 Issue 讨论后再提交 PR。
