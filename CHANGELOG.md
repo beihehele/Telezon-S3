@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.10.5 — 2026-07-31
+
+### Fixes (deploy)
+- Account-mode deploys no longer require `BOT_TOKEN`: legacy bot PTB `Application` is built lazily (fixes `InvalidToken` at import when token is unset or empty).
+- Telegram package uses lazy imports so `account_client` does not pull in bot storage at startup.
+- Pyrogram config errors set `last_error`; startup logs a concise warning when `/api/health` will stay 503 until `SESSION_STRING` is fixed.
+
 ## 0.10.4 — 2026-07-31
 
 ### Fixes (MySQL 8.0)

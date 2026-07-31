@@ -31,18 +31,22 @@ class TelegramAccountClientManager:
 
         session = effective_session_string(SESSION_STRING)
         if not session:
-            raise ValueError(
+            self.ready = False
+            self.last_error = (
                 "SESSION_STRING is not set. Run setup_account_storage.py "
                 "(or docker compose --profile setup run --rm setup) first."
             )
+            raise ValueError(self.last_error)
         if not TELEGRAM_API_ID or not TELEGRAM_API_HASH:
-            raise ValueError(
-                "TELEGRAM_API_ID and TELEGRAM_API_HASH must be set in .env"
-            )
+            self.ready = False
+            self.last_error = "TELEGRAM_API_ID and TELEGRAM_API_HASH must be set in .env"
+            raise ValueError(self.last_error)
         try:
             api_id = int(str(TELEGRAM_API_ID).strip())
         except ValueError as exc:
-            raise ValueError("TELEGRAM_API_ID must be a number") from exc
+            self.ready = False
+            self.last_error = "TELEGRAM_API_ID must be a number"
+            raise ValueError(self.last_error) from exc
 
         kwargs = {
             "name": "telegram",

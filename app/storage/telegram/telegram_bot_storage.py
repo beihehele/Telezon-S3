@@ -3,7 +3,7 @@ import logging
 from app.core.config import CID, TG_RATE_WAIT_SECONDS
 from app.storage.errors import StorageThrottleError
 from app.storage.backend import PutFileResult, Storage
-from app.storage.telegram.bot import bot
+from app.storage.telegram.bot import get_bot
 from app.storage.telegram_limiter import telegram_rate_limiter
 
 logger = logging.getLogger(__name__)
@@ -30,7 +30,7 @@ class TelegramBotStorage(Storage):
         kwargs = {"filename": filename}
         if topic_id is not None:
             kwargs["message_thread_id"] = topic_id
-        result = await bot.send_document(
+        result = await get_bot().send_document(
             self._resolve_chat_id(chat_id), file, **kwargs
         )
         return PutFileResult(
@@ -40,7 +40,7 @@ class TelegramBotStorage(Storage):
 
     async def get_file(self, file_id: str):
         await self._acquire()
-        return await bot.get_file(file_id)
+        return await get_bot().get_file(file_id)
 
     async def delete_message(
         self,
@@ -50,7 +50,7 @@ class TelegramBotStorage(Storage):
     ) -> bool:
         try:
             await self._acquire()
-            await bot.delete_message(
+            await get_bot().delete_message(
                 chat_id=self._resolve_chat_id(chat_id), message_id=message_id
             )
             return True

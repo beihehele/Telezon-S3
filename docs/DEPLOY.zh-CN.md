@@ -24,7 +24,7 @@ cp .env.example .env
 | `MYSQL_ROOT_PASSWORD` | **仅** Compose 内置 `db` 服务需要；外置 MySQL 可省略 |
 | `DATABASE_URL` | **可选**：使用已有 MySQL 时设为 `mysql://用户:密码@主机:3306/库名`（密码含 `@`、`#`、`:` 等须 [URL 编码](https://docs.python.org/3/library/urllib.parse.html#urllib.parse.quote_plus)；应用会转为 `mysql+aiomysql://`）。Compose 内置 `db` 时只需设 `MYSQL_*`，应用容器内 `MYSQL_HOST=db`，**不要**在 compose 里手写未编码的 `DATABASE_URL` |
 | `CID` | 默认存储频道/群 ID；setup 可监听消息获取。未配置时服务启动会记录警告 |
-| `BOT_TOKEN` | 仅 `ENABLE_MGMT_BOT=1` 时需要 |
+| `BOT_TOKEN` | 仅 `ENABLE_MGMT_BOT=1` 或旧版 bot 存储脚本需要；**账户模式请留空**，勿写空字符串或占位符 |
 | `PORT` | 宿主机访问端口（Compose 映射为 `PORT:8000`，容器内固定 8000） |
 
 ### 家庭 NAS + Telegram 代理
@@ -61,7 +61,7 @@ cp .env.example .env
 Telegram 首次登录需要手机号、验证码、可能还有两步验证密码，**无法**在纯后台 `docker compose up` 里完成。
 
 ```bash
-export IMAGE_TAG=${VERSION:-0.10.4}
+export IMAGE_TAG=${VERSION:-0.10.5}
 docker compose pull
 docker compose --profile setup run --rm setup
 ```
@@ -75,11 +75,11 @@ docker compose --profile setup run --rm setup
 ## 4. 启动
 
 ```bash
-export IMAGE_TAG=${IMAGE_TAG:-0.10.4}
+export IMAGE_TAG=${IMAGE_TAG:-0.10.5}
 docker compose up -d
 ```
 
-若你自行改过启动命令：官方 **0.10.2+** 镜像已用 `uvicorn` 启动；**0.10.4+** 含 MySQL 索引 1071 修复。更早镜像若出现 `fastapi` / `Secondary flag` 崩溃，可在 compose 的 `app` 上覆盖：
+若你自行改过启动命令：官方 **0.10.2+** 镜像已用 `uvicorn` 启动；**0.10.4+** 含 MySQL 索引 1071 修复；**0.10.5+** 账户模式无需 `BOT_TOKEN`。更早镜像若出现 `fastapi` / `Secondary flag` 崩溃，可在 compose 的 `app` 上覆盖：
 
 ```yaml
 command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
@@ -93,10 +93,11 @@ command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--w
 
 使用 `INITIAL_ADMIN_*` 登录 REST API，在 `/api/v1/credentials` 创建 Access Key，供 boto3 / AWS CLI 使用。
 
-## 6. 升级与空库（MySQL 8.0，建议 ≥0.10.4）
+## 6. 升级与空库（MySQL 8.0，建议 ≥0.10.5）
 
 | 版本 | 说明 |
 |------|------|
+| **0.10.5+** | 账户模式可不配置 `BOT_TOKEN`（避免启动时 InvalidToken） |
 | **0.10.4+** | 修复 `ix_blobs_bucket_path` 在 utf8mb4 下错误 1071（`path(512)` 前缀） |
 | **0.10.2+** | 修复 MySQL 建表（`users.description`、`blobs.path_digest`）；Docker 使用 `uvicorn` + 构建锁定 `poetry.lock` |
 | **低于 0.10.2** | 外置 MySQL 上可能遇到建表错误（如 1101 / 1170）或容器 `fastapi run` 启动失败 |
@@ -104,7 +105,7 @@ command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--w
 **推荐升级步骤（个人 NAS、可接受清空元数据）：**
 
 ```bash
-export IMAGE_TAG=0.10.4
+export IMAGE_TAG=0.10.5
 docker compose pull
 docker compose up -d --force-recreate
 ```
@@ -124,6 +125,7 @@ CREATE DATABASE TelezonS3 CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 - **`database.ok: false`**：检查 `DATABASE_URL` / `MYSQL_*`、网络与账号权限；可设 `HEALTH_EXPOSE_ERRORS=1` 查看 `database.error`。在容器内测试：`python -c "import socket; socket.create_connection(('你的MYSQL_HOST',3306),5)"`。
 - **建表报错 1101 / 1170 / 1071**：请使用 **0.10.4+** 镜像并对空库执行 `create_all`（见「升级与空库」）。1071 多为 `path(768)` 索引；0.10.4 改为 `path(512)`。
+- **启动报 InvalidToken / 未配 BOT_TOKEN**：账户模式请用 **0.10.5+**，并删除 `.env` 中空 `BOT_TOKEN=`。
 - **`Can't connect to MySQL server` / 超时**：检查 `MYSQL_HOST` 对容器是否可达（勿用指向容器自身的 `127.0.0.1`）。
 - **`telegram.ok: false`**：检查 `.env` 中 `SESSION_STRING` 是否完整、无换行截断；会话失效则重新跑 setup。
 - **换 Telegram 账号**：重新执行 setup，更新 `SESSION_STRING` 后 `docker compose up -d` 重启 app。

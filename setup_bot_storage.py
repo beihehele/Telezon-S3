@@ -1,7 +1,7 @@
 from telegram import Update
 from telegram.ext import ContextTypes, MessageHandler, filters
 
-from app.storage.telegram.bot import updater
+from app.storage.telegram.bot import get_updater
 
 
 # Run this file with bot in channel as admin to get channel_id use in CID enviroment variable
@@ -20,6 +20,7 @@ def main():
         "Text in your channel `cid` to get channel id and setup CID enviroment variable"
     )
 
+    updater = get_updater()
     updater.add_handler(MessageHandler(filters.TEXT, cid))
 
     updater.run_polling()

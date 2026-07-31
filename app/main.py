@@ -38,6 +38,12 @@ async def lifespan(app: FastAPI):
         await account_client_manager.start()
     except Exception:
         logger.exception("Failed to start Telegram account client")
+        if account_client_manager.last_error:
+            logger.warning(
+                "S3 storage needs a working Pyrogram session (SESSION_STRING); "
+                "/api/health will return 503 until fixed. Detail: %s",
+                account_client_manager.last_error,
+            )
     await start_mgmt_bot_if_enabled()
     await start_gc_if_enabled()
     yield
