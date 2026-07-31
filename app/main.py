@@ -44,6 +44,14 @@ async def lifespan(app: FastAPI):
                 "/api/health will return 503 until fixed. Detail: %s",
                 account_client_manager.last_error,
             )
+    if account_client_manager.ready:
+        logger.info("Telegram account client is ready (S3 storage)")
+    else:
+        logger.warning(
+            "Telegram account client not ready; /api/health will return 503. "
+            "Set HEALTH_EXPOSE_ERRORS=1 to see telegram.error in JSON. Detail: %s",
+            account_client_manager.last_error or "unknown",
+        )
     await start_mgmt_bot_if_enabled()
     await start_gc_if_enabled()
     yield

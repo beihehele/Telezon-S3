@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.10.6 — 2026-07-31
+
+### Ops
+- Log uvicorn-level readiness after startup: when Pyrogram is not ready, WARNING includes `last_error` hint (easier NAS debug for `/api/health` 503).
+
 ## 0.10.5 — 2026-07-31
 
 ### Fixes (deploy)
