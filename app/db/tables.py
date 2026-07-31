@@ -72,7 +72,8 @@ class BlobRow(Base):
             "ix_blobs_bucket_path",
             "bucket_name",
             "path",
-            mysql_length={"path": 768},
+            # utf8mb4: 255*4 + 512*4 <= 3072 (InnoDB max key length)
+            mysql_length={"path": 512},
         ),
     )
 

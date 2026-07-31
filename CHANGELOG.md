@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.10.4 — 2026-07-31
+
+### Fixes (MySQL 8.0)
+- `ix_blobs_bucket_path` uses `path(512)` prefix so utf8mb4 index stays within InnoDB 3072-byte limit (error 1071).
+
 ## 0.10.2 — 2026-07-31
 
 ### Fixes (MySQL 8.0 deploy)
