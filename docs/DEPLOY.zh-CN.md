@@ -61,7 +61,7 @@ cp .env.example .env
 Telegram 首次登录需要手机号、验证码、可能还有两步验证密码，**无法**在纯后台 `docker compose up` 里完成。
 
 ```bash
-export IMAGE_TAG=${VERSION:-0.10.6}
+export IMAGE_TAG=${VERSION:-0.10.7}
 docker compose pull
 docker compose --profile setup run --rm setup
 ```
@@ -75,7 +75,7 @@ docker compose --profile setup run --rm setup
 ## 4. 启动
 
 ```bash
-export IMAGE_TAG=${IMAGE_TAG:-0.10.6}
+export IMAGE_TAG=${IMAGE_TAG:-0.10.7}
 docker compose up -d
 ```
 
@@ -93,10 +93,11 @@ command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--w
 
 使用 `INITIAL_ADMIN_*` 登录 REST API，在 `/api/v1/credentials` 创建 Access Key，供 boto3 / AWS CLI 使用。
 
-## 6. 升级与空库（MySQL 8.0，建议 ≥0.10.6）
+## 6. 升级与空库（MySQL 8.0，建议 ≥0.10.7）
 
 | 版本 | 说明 |
 |------|------|
+| **0.10.7+** | 修复 `/api/health` 误报 503（数据库已连接但探活仍失败） |
 | **0.10.6+** | 启动日志明确 Pyrogram 是否 ready（503 时看 WARNING 里的 Detail） |
 | **0.10.5+** | 账户模式可不配置 `BOT_TOKEN`（避免启动时 InvalidToken） |
 | **0.10.4+** | 修复 `ix_blobs_bucket_path` 在 utf8mb4 下错误 1071（`path(512)` 前缀） |
@@ -106,7 +107,7 @@ command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--w
 **推荐升级步骤（个人 NAS、可接受清空元数据）：**
 
 ```bash
-export IMAGE_TAG=0.10.6
+export IMAGE_TAG=0.10.7
 docker compose pull
 docker compose up -d --force-recreate
 ```

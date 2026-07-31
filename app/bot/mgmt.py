@@ -10,7 +10,7 @@ from app.core.config import (
     TOKEN,
     logger,
 )
-from app.db.session import async_session_factory
+from app.db import session as db_session
 from app.db.tables import BlobRow, BucketRow, UserRow
 
 
@@ -72,10 +72,10 @@ async def start_mgmt_bot_if_enabled() -> None:
             if not _is_admin(update):
                 await update.message.reply_text("Unauthorized")
                 return
-            if async_session_factory is None:
+            if db_session.async_session_factory is None:
                 await update.message.reply_text("Database not ready")
                 return
-            async with async_session_factory() as session:
+            async with db_session.async_session_factory() as session:
                 users = await session.scalar(select(func.count()).select_from(UserRow))
                 buckets = await session.scalar(
                     select(func.count()).select_from(BucketRow)
@@ -89,11 +89,11 @@ async def start_mgmt_bot_if_enabled() -> None:
             if not _is_admin(update):
                 await update.message.reply_text("Unauthorized")
                 return
-            if async_session_factory is None:
+            if db_session.async_session_factory is None:
                 await update.message.reply_text("Database not ready")
                 return
             names = []
-            async with async_session_factory() as session:
+            async with db_session.async_session_factory() as session:
                 result = await session.execute(select(BucketRow.name).limit(50))
                 names = [row[0] for row in result.all()]
             await update.message.reply_text(

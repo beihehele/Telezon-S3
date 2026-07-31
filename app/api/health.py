@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 from starlette.status import HTTP_200_OK, HTTP_503_SERVICE_UNAVAILABLE
 
 from app.core.config import HEALTH_EXPOSE_ERRORS
-from app.db.session import async_session_factory, ping_database
+from app.db import session as db_session
 from app.storage.telegram.account_client import account_client_manager
 
 router = APIRouter(tags=["Health"])
@@ -13,9 +13,9 @@ router = APIRouter(tags=["Health"])
 async def health():
     db_ok = False
     db_error: str | None = None
-    if async_session_factory is not None:
+    if db_session.async_session_factory is not None:
         try:
-            await ping_database()
+            await db_session.ping_database()
             db_ok = True
         except Exception as exc:
             db_error = str(exc)

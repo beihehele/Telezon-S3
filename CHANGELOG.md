@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.10.7 — 2026-07-31
+
+### Fixes
+- `/api/health` always read `async_session_factory` via `app.db.session` at request time (fixes false 503 when DB was connected but health imported the initial `None` binding). Same pattern fixed for GC and management bot DB access.
+
 ## 0.10.6 — 2026-07-31
 
 ### Ops

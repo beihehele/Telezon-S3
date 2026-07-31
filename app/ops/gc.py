@@ -22,7 +22,7 @@ from app.crud.multipart import (
 )
 from app.crud.share import crud_delete_expired_shares
 from app.crud.trash import crud_delete_trash, crud_list_expired_trash
-from app.db.session import async_session_factory
+from app.db import session as db_session
 from app.ops.tg_delete import retry_pending_tg_deletes
 from app.s3.object_lifecycle import purge_trash_item
 from app.storage import storage
@@ -125,7 +125,7 @@ async def _purge_expired_trash(session) -> int:
 
 
 async def run_gc_once() -> dict:
-    if async_session_factory is None:
+    if db_session.async_session_factory is None:
         return {
             "multipart_aborted": 0,
             "shares_deleted": 0,
@@ -134,7 +134,7 @@ async def run_gc_once() -> dict:
             "trash_purged": 0,
         }
 
-    async with async_session_factory() as session:
+    async with db_session.async_session_factory() as session:
         now = datetime.now(timezone.utc)
         multipart_cutoff = now - timedelta(seconds=GC_MULTIPART_MAX_AGE_SECONDS)
         aborted = 0

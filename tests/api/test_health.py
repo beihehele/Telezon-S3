@@ -1,6 +1,7 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from app.db import session as db_session
 from app.main import app
 from app.storage.telegram.account_client import account_client_manager
 
@@ -10,9 +11,31 @@ def wired_db(mock_db, monkeypatch):
     async def fake_ping():
         return None
 
-    monkeypatch.setattr("app.api.health.async_session_factory", object())
-    monkeypatch.setattr("app.api.health.ping_database", fake_ping)
+    monkeypatch.setattr(db_session, "async_session_factory", object())
+    monkeypatch.setattr(db_session, "ping_database", fake_ping)
     yield mock_db
+
+
+@pytest.mark.asyncio
+async def test_health_db_ok_when_factory_set_after_health_module_import(monkeypatch):
+    """Regression: must not snapshot async_session_factory at import time."""
+    from app.api import health as health_module
+
+    assert health_module is not None
+
+    async def fake_ping():
+        return None
+
+    monkeypatch.setattr(db_session, "async_session_factory", object())
+    monkeypatch.setattr(db_session, "ping_database", fake_ping)
+    monkeypatch.setattr(account_client_manager, "ready", True)
+    monkeypatch.setattr(account_client_manager, "last_error", None)
+
+    from app.api.health import health
+
+    resp = await health()
+    assert resp.status_code == 200
+    assert resp.body  # JSONResponse
 
 
 @pytest.mark.asyncio
