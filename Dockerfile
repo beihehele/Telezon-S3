@@ -25,7 +25,7 @@ RUN apk add --no-cache \
 
 WORKDIR /app
 
-COPY pyproject.toml ./
+COPY pyproject.toml poetry.lock ./
 RUN pip install --no-cache-dir poetry poetry-plugin-export \
     && poetry export -f requirements.txt --output requirements.txt --without-hashes --without dev \
     && pip install --no-cache-dir -r requirements.txt \
@@ -36,4 +36,4 @@ COPY . .
 EXPOSE 8000
 
 # Single worker required: Telegram account SESSION_STRING cannot be shared across processes.
-CMD ["fastapi", "run", "--workers", "1", "app/main.py"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

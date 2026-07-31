@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.10.2 — 2026-07-31
+
+### Fixes (MySQL 8.0 deploy)
+- Schema: `users.description` as `VARCHAR(512)` (avoids `TEXT` + `DEFAULT` error 1101 on strict servers).
+- Schema: blob object keys use `path_digest` + `UNIQUE (bucket_name, path_digest)` so `TEXT path` is not in a unique index (avoids error 1170).
+- Docker: start with `uvicorn` instead of `fastapi run` (Click/Typer crash); image build exports deps from `poetry.lock`.
+
 ## 0.10.1 — 2026-07-30
 
 ### Security / ops (personal / home NAS)

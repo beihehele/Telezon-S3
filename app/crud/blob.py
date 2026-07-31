@@ -5,6 +5,7 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.mappers import blob_from_row, blob_in_db_from_row, parts_to_json
+from app.db.path_digest import blob_path_digest
 from app.db.sql_like import escape_like_prefix
 from app.db.tables import BlobRow, BucketRow, UserRow
 from app.models.blob import Blob, BlobFilterParams, BlobInCreate, BlobInDb
@@ -43,6 +44,7 @@ async def crud_create_blob(
         row = BlobRow(
             bucket_name=bucket_name,
             path=data_blob.path,
+            path_digest=blob_path_digest(bucket_name, data_blob.path),
             file=data_blob.file or "",
             content_type=data_blob.content_type or "",
             size=int(data_blob.size or 0),

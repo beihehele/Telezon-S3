@@ -29,7 +29,7 @@ class UserRow(Base):
 
     username: Mapped[str] = mapped_column(String(64), primary_key=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
-    description: Mapped[str] = mapped_column(Text, default="", server_default="")
+    description: Mapped[str] = mapped_column(String(512), default="", server_default="")
     role: Mapped[str] = mapped_column(String(32), default="user", server_default="user")
     access_key_id: Mapped[str] = mapped_column(String(64), default="", index=True)
     secret_key: Mapped[str] = mapped_column(String(128), default="")
@@ -67,8 +67,13 @@ class BucketRow(Base):
 class BlobRow(Base):
     __tablename__ = "blobs"
     __table_args__ = (
-        UniqueConstraint("bucket_name", "path", name="uq_blob_bucket_path"),
-        Index("ix_blobs_bucket_path", "bucket_name", "path"),
+        UniqueConstraint("bucket_name", "path_digest", name="uq_blob_bucket_path"),
+        Index(
+            "ix_blobs_bucket_path",
+            "bucket_name",
+            "path",
+            mysql_length={"path": 768},
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -79,6 +84,7 @@ class BlobRow(Base):
         nullable=False,
     )
     path: Mapped[str] = mapped_column(Text, nullable=False)
+    path_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     file: Mapped[str] = mapped_column(String(512), default="")
     content_type: Mapped[str] = mapped_column(String(255), default="")
     size: Mapped[int] = mapped_column(BigInteger, default=0)
