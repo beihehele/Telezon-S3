@@ -31,16 +31,23 @@ from app.s3.auth import (
     precheck_request_for_bucket,
     resolve_identity,
 )
-from app.s3.body import BodyTooLarge, read_body_capped, reject_oversized_content_length
+from app.s3 import stream_upload
+from app.s3.body import (
+    BodyTooLarge,
+    read_body_capped,
+    reject_oversized_content_length,
+    stream_body_to_file,
+)
+from app.s3.stream_upload import SHA_MISMATCH
 from app.s3.errors import s3_error_response
 from app.storage import storage
 from app.storage.disk_cache import cache_delete
 from app.storage.errors import StorageThrottleError, StorageUnavailableError
 from app.storage.mpu_staging import (
-    read_part,
+    part_staging_path,
+    part_tg_upload_path,
     remove_upload_staging,
     staging_enabled,
-    write_part,
 )
 from app.storage.tg_label import tg_document_label
 
@@ -157,8 +164,23 @@ async def upload_part(
     if pre != AUTH_OK:
         return auth_error_response(pre, resource)
 
+    if not staging_enabled():
+        return s3_error_response(
+            status_code=503,
+            code="ServiceUnavailable",
+            message="MPU_STAGING_DIR is not configured",
+            resource=resource,
+        )
+
+    pre_auth = await stream_upload.authorize_before_stream(bucket, request, db)
+    if pre_auth not in (AUTH_OK, stream_upload.DEFER_STREAM_AUTH):
+        return auth_error_response(pre_auth, resource)
+
+    path = part_staging_path(upload_id, part_number)
     try:
-        body = await read_body_capped(request, MAX_UPLOAD_BYTES)
+        size, md5_hex, sha256_hex = await stream_body_to_file(
+            request, path, MAX_UPLOAD_BYTES
+        )
     except BodyTooLarge as exc:
         return s3_error_response(
             status_code=400,
@@ -169,24 +191,7 @@ async def upload_part(
             ),
             resource=resource,
         )
-
-    auth = await authorize_request_for_bucket(bucket, request, db, body=body)
-    if auth != AUTH_OK:
-        return auth_error_response(auth, resource)
-    if not await _upload_owner_ok(upload, bucket, request, db):
-        return s3_error_response(status_code=403, code="AccessDenied", resource=resource)
-
-    if not staging_enabled():
-        return s3_error_response(
-            status_code=503,
-            code="ServiceUnavailable",
-            message="MPU_STAGING_DIR is not configured",
-            resource=resource,
-        )
-
-    try:
-        write_part(upload_id, part_number, body)
-    except Exception:
+    except OSError:
         return s3_error_response(
             status_code=503,
             code="ServiceUnavailable",
@@ -194,13 +199,34 @@ async def upload_part(
             resource=resource,
         )
 
-    etag = _etag_for_bytes(body)
+    auth = await stream_upload.finalize_streamed_payload(
+        bucket,
+        request,
+        db,
+        sha256_hex=sha256_hex,
+        staging_path=path,
+        pre_authenticated=pre_auth == AUTH_OK,
+    )
+    if auth == SHA_MISMATCH:
+        return s3_error_response(
+            status_code=400,
+            code="InvalidRequest",
+            message="x-amz-content-sha256 does not match request payload",
+            resource=resource,
+        )
+    if auth != AUTH_OK:
+        return auth_error_response(auth, resource)
+    if not await _upload_owner_ok(upload, bucket, request, db):
+        path.unlink(missing_ok=True)
+        return s3_error_response(status_code=403, code="AccessDenied", resource=resource)
+
+    etag = f'"{md5_hex}"'
     previous = await crud_upsert_part(
         db,
         upload_id=upload_id,
         part_number=part_number,
         etag=etag,
-        size=len(body),
+        size=size,
         file_id="",
         message_id=None,
         staging_path=f"{upload_id}/part-{part_number}",
@@ -321,12 +347,6 @@ async def complete_multipart_upload(
             for num in sorted_nums
         ]
     else:
-        documents: list[tuple[bytes, str]] = []
-        for num in sorted_nums:
-            data = read_part(upload_id, num)
-            documents.append(
-                (data, tg_document_label(storage_id, part_number=num))
-            )
         built: list[BlobPart] = []
         albums_meta: list[TelegramAlbumMeta] = []
         chat_id = getattr(bucket, "telegram_chat_id", None)
@@ -352,13 +372,18 @@ async def complete_multipart_upload(
                 )
 
         try:
-            for offset in range(0, len(documents), TG_ALBUM_MAX_ITEMS):
-                chunk = documents[offset : offset + TG_ALBUM_MAX_ITEMS]
+            for offset in range(0, len(sorted_nums), TG_ALBUM_MAX_ITEMS):
                 chunk_nums = sorted_nums[offset : offset + TG_ALBUM_MAX_ITEMS]
+                chunk_docs = []
+                for num in chunk_nums:
+                    label = tg_document_label(storage_id, part_number=num)
+                    chunk_docs.append(
+                        (part_tg_upload_path(upload_id, num, label), label)
+                    )
                 results = await storage.send_media_group(
-                    chunk, chat_id=chat_id, topic_id=topic_id
+                    chunk_docs, chat_id=chat_id, topic_id=topic_id
                 )
-                if len(results) != len(chunk):
+                if len(results) != len(chunk_docs):
                     raise StorageUnavailableError("incomplete media group response")
                 gid = results[0].grouped_id
                 if telegram_grouped_id is None and gid is not None:
@@ -390,6 +415,14 @@ async def complete_multipart_upload(
             await _rollback_sent_parts(built)
             return s3_error_response(
                 status_code=503, code="ServiceUnavailable", resource=resource
+            )
+        except (OSError, ValueError):
+            await _rollback_sent_parts(built)
+            return s3_error_response(
+                status_code=503,
+                code="ServiceUnavailable",
+                message="Failed to prepare staged multipart part",
+                resource=resource,
             )
         parts = built
         telegram_albums = albums_meta

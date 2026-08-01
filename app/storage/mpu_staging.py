@@ -1,7 +1,11 @@
+import logging
+import os
 import shutil
 from pathlib import Path
 
 from app.core.config import MPU_STAGING_DIR
+
+logger = logging.getLogger(__name__)
 
 
 def staging_enabled() -> bool:
@@ -25,8 +29,30 @@ def write_part(upload_id: str, part_number: int, data: bytes) -> Path:
     return path
 
 
-def read_part(upload_id: str, part_number: int) -> bytes:
-    return part_staging_path(upload_id, part_number).read_bytes()
+def part_tg_upload_path(upload_id: str, part_number: int, label: str) -> Path:
+    """Filesystem path for Pyrogram upload; basename matches ``label`` (no RAM read)."""
+    src = part_staging_path(upload_id, part_number)
+    if not src.is_file():
+        raise FileNotFoundError(f"staged part missing: {src}")
+    dest = upload_staging_dir(upload_id) / label
+    if dest.exists():
+        try:
+            if dest.samefile(src):
+                return dest
+        except OSError:
+            pass
+        dest.unlink()
+    try:
+        os.link(src, dest)
+    except OSError:
+        try:
+            dest.symlink_to(src.resolve())
+        except OSError:
+            logger.warning(
+                "mpu staging: hardlink/symlink failed for %s; copying", dest.name
+            )
+            shutil.copy2(src, dest)
+    return dest
 
 
 def remove_upload_staging(upload_id: str) -> None:

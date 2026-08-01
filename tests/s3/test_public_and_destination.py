@@ -125,7 +125,7 @@ async def test_put_passes_bucket_telegram_destination(
     async def fake_bucket(db, name):
         return _bucket()
 
-    async def fake_verify(bucket, request, db=None, body=None):
+    async def fake_verify(bucket, request, db=None, body=None, **kwargs):
         return "ok"
 
     async def fake_get_all(db, filters):

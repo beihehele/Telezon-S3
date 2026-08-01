@@ -1,9 +1,10 @@
 import io
 import logging
+from pathlib import Path
 
 from app.core.config import CID, TG_RATE_WAIT_SECONDS
+from app.storage.backend import MediaGroupSource, PutFileResult, PutFileSource, Storage
 from app.storage.errors import StorageObjectGoneError, StorageThrottleError, StorageUnavailableError
-from app.storage.backend import PutFileResult, Storage
 from app.storage.telegram.account_client import account_client_manager
 from app.storage.telegram.topic import pyrogram_document_topic_kwargs
 from app.storage.telegram_limiter import telegram_rate_limiter
@@ -32,19 +33,24 @@ class TelegramAccountStorage(Storage):
 
     async def put_file(
         self,
-        file: bytes,
+        file: PutFileSource,
         filename: str,
         *,
         chat_id: str | None = None,
         topic_id: int | None = None,
     ) -> PutFileResult:
         await self._acquire()
-        document = io.BytesIO(file)
         client = self._require_client()
         kwargs = {"file_name": filename, **pyrogram_document_topic_kwargs(topic_id)}
-        response = await client.send_document(
-            self._resolve_chat_id(chat_id), document, **kwargs
-        )
+        if isinstance(file, (str, Path)):
+            response = await client.send_document(
+                self._resolve_chat_id(chat_id), str(file), **kwargs
+            )
+        else:
+            document = io.BytesIO(file)
+            response = await client.send_document(
+                self._resolve_chat_id(chat_id), document, **kwargs
+            )
         return PutFileResult(
             file_id=str(response.document.file_id),
             message_id=response.id,
@@ -52,7 +58,7 @@ class TelegramAccountStorage(Storage):
 
     async def send_media_group(
         self,
-        documents: list[tuple[bytes, str]],
+        documents: list[tuple[MediaGroupSource, str]],
         *,
         chat_id: str | None = None,
         topic_id: int | None = None,
@@ -64,10 +70,18 @@ class TelegramAccountStorage(Storage):
 
         client = self._require_client()
         media = []
-        for data, name in documents:
-            document = io.BytesIO(data)
-            document.name = name
-            media.append(InputMediaDocument(document, file_name=name))
+        for source, name in documents:
+            if isinstance(source, (str, Path)):
+                path = Path(source)
+                if path.name != name:
+                    raise ValueError(
+                        f"media path basename {path.name!r} != label {name!r}"
+                    )
+                media.append(InputMediaDocument(str(path)))
+            else:
+                document = io.BytesIO(source)
+                document.name = name
+                media.append(InputMediaDocument(document))
         kwargs = pyrogram_document_topic_kwargs(topic_id)
         messages = await client.send_media_group(
             self._resolve_chat_id(chat_id), media, **kwargs

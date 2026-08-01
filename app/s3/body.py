@@ -22,6 +22,35 @@ async def read_body_capped(request: Request, max_bytes: int) -> bytes:
     return b"".join(chunks)
 
 
+async def stream_body_to_file(
+    request: Request, path, max_bytes: int
+) -> tuple[int, str, str]:
+    """Stream the request body to ``path``; return (size, md5_hex, sha256_hex)."""
+    import hashlib
+    from pathlib import Path
+
+    dest = Path(path)
+    md5 = hashlib.md5()
+    sha = hashlib.sha256()
+    total = 0
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with dest.open("wb") as out:
+            async for chunk in request.stream():
+                if not chunk:
+                    continue
+                total += len(chunk)
+                if total > max_bytes:
+                    raise BodyTooLarge(total)
+                md5.update(chunk)
+                sha.update(chunk)
+                out.write(chunk)
+    except Exception:
+        dest.unlink(missing_ok=True)
+        raise
+    return total, md5.hexdigest(), sha.hexdigest()
+
+
 def reject_oversized_content_length(request: Request, resource: str):
     content_length = request.headers.get("content-length")
     if content_length is None:

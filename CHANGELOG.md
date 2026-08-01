@@ -4,6 +4,15 @@
 
 _Nothing yet._
 
+## 0.11.2 — 2026-08-01
+
+### Fixes
+- **Multipart Complete:** fix Pyrogram `InputMediaDocument` construction (use `BytesIO.name` or on-disk path; no invalid `file_name` kwarg).
+- **Multipart Complete memory:** stream parts from `MPU_STAGING_DIR` via hardlink/symlink paths instead of loading all parts into RAM before `send_media_group`.
+- **UploadPart memory:** stream request body to staging while computing MD5/SHA256; verify SigV4 from payload hash without buffering the whole part in RAM.
+- **PutObject memory:** same streaming staging for plain uploads; Telegram `send_document` reads from disk path. SSE-C still reads staged file once for AES-GCM encryption.
+- **Streamed upload auth:** verify SigV4 before writing the body when `x-amz-content-sha256` or `UNSIGNED-PAYLOAD` is present; after upload, confirm payload hash matches the header.
+
 ## 0.11.1 — 2026-08-01
 
 ### Fixes

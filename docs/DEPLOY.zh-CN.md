@@ -148,6 +148,10 @@ ALTER TABLE multipart_parts ADD COLUMN staging_path VARCHAR(512) NULL;
 | `TG_ALBUM_MAX_ITEMS` | `10` | 每个 Telegram 相册最多 part 数 |
 | `MPU_STAGING_DIR` | `{CACHE_DIR}/mpu-staging` 或系统临时目录 | Multipart UploadPart 落盘路径 |
 
+**磁盘（0.11.2+）：** `CACHE_DIR` 除对象读缓存外，还会存放 `mpu-staging/`（分片上传）与 `put-staging/`（单次 Put 流式落盘）。请保证该分区空间 ≥ 并发上传体积（受 `MAX_UPLOAD_BYTES` 与分片数限制），并尽量与数据盘同盘，以便硬链接省空间。未配置 `CACHE_DIR` 时上述目录落在系统临时目录。
+
+**流式上传验签：** S3 客户端若带 `x-amz-content-sha256`（或 `UNSIGNED-PAYLOAD`），服务在落盘前校验签名；落盘后仅核对正文哈希是否与头一致。
+
 **跨桶 Copy + 论坛 Topic（已知限制，暂不修）：** 跨桶 Copy 走 TG 转发时，消息会进目标桶的 `telegram_chat_id` 对应群，但**不一定**进入该桶配置的 `telegram_topic_id` 话题；S3 读写正常，仅在 TG 客户端里可能和 Put 上传的文件不在同一话题。详见规格 `docs/superpowers/specs/2026-08-01-opaque-tg-names-and-rename-design.zh-CN.md` §4.2.1。
 
 ## 常见问题

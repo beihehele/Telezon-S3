@@ -44,7 +44,7 @@ async def test_list_v2_delimiter(mock_db, monkeypatch):
     async def fake_bucket(db, name):
         return Bucket(name=name, owner=owner, size=0)
 
-    async def fake_verify(bucket, request, db=None, body=None):
+    async def fake_verify(bucket, request, db=None, body=None, **kwargs):
         return "ok"
 
     for path in ["docs/a.txt", "docs/b.txt", "readme.txt"]:
@@ -91,7 +91,7 @@ async def test_versioning_stub(mock_db, monkeypatch):
     async def fake_bucket(db, name):
         return Bucket(name=name, owner=owner, size=0)
 
-    async def fake_verify(bucket, request, db=None, body=None):
+    async def fake_verify(bucket, request, db=None, body=None, **kwargs):
         return "ok"
 
     monkeypatch.setattr(

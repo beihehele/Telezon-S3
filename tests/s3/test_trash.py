@@ -96,7 +96,7 @@ async def test_soft_delete_via_s3_api(mock_db, monkeypatch):
     async def fake_bucket(db, name):
         return _bucket()
 
-    async def fake_verify(bucket, request, db=None, body=None):
+    async def fake_verify(bucket, request, db=None, body=None, **kwargs):
         return "ok"
 
     await crud_create_blob(

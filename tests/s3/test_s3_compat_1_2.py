@@ -38,7 +38,7 @@ async def test_copy_object(mock_db, fake_storage, monkeypatch):
     async def fake_bucket(db, name):
         return _bucket(name)
 
-    async def fake_verify(bucket, request, db=None, body=None):
+    async def fake_verify(bucket, request, db=None, body=None, **kwargs):
         return "ok"
 
     async def fake_identity(db, request, body=None):
@@ -125,7 +125,7 @@ async def test_copy_object_rejects_oversized(mock_db, fake_storage, monkeypatch)
     async def fake_bucket(db, name):
         return _bucket(name)
 
-    async def fake_verify(bucket, request, db=None, body=None):
+    async def fake_verify(bucket, request, db=None, body=None, **kwargs):
         return "ok"
 
     async def fake_identity(db, request, body=None):
@@ -190,7 +190,7 @@ async def test_copy_object_denies_source_outside_scoped_buckets(mock_db, monkeyp
     async def fake_bucket(db, name):
         return _bucket(name)
 
-    async def fake_verify(bucket, request, db=None, body=None):
+    async def fake_verify(bucket, request, db=None, body=None, **kwargs):
         return "ok"
 
     async def fake_identity(db, request, body=None):
@@ -275,7 +275,7 @@ async def test_head_create_delete_bucket(mock_db, monkeypatch):
     async def fake_list_uploads(db, **kwargs):
         return []
 
-    async def fake_verify(bucket, request, db=None, body=None):
+    async def fake_verify(bucket, request, db=None, body=None, **kwargs):
         return "ok"
 
     async def fake_identity(db, request, body=None):
@@ -331,7 +331,7 @@ async def test_list_multipart_uploads(mock_db, monkeypatch):
     async def fake_bucket(db, name):
         return _bucket()
 
-    async def fake_verify(bucket, request, db=None, body=None):
+    async def fake_verify(bucket, request, db=None, body=None, **kwargs):
         return "ok"
 
     async def fake_list(db, **kwargs):

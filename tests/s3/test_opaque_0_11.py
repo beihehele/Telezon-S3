@@ -56,7 +56,7 @@ async def test_cross_bucket_copy_uses_forward_not_put(mock_db, fake_storage, mon
     async def fake_bucket(db, name):
         return _bucket(name, chat_id="2002" if name == "archive" else "1001")
 
-    async def fake_verify(bucket, request, db=None, body=None):
+    async def fake_verify(bucket, request, db=None, body=None, **kwargs):
         return "ok"
 
     async def fake_identity(db, request, body=None):
@@ -130,7 +130,7 @@ async def test_mpu_complete_uses_two_media_groups_for_fifteen_parts(
     async def fake_bucket(db, name):
         return _bucket(name)
 
-    async def fake_verify(bucket, request, db=None, body=None):
+    async def fake_verify(bucket, request, db=None, body=None, **kwargs):
         return "ok"
 
     store = {}
@@ -232,7 +232,7 @@ async def test_mpu_complete_failure_rolls_back_partial_tg(
     async def fake_bucket(db, name):
         return _bucket(name)
 
-    async def fake_verify(bucket, request, db=None, body=None):
+    async def fake_verify(bucket, request, db=None, body=None, **kwargs):
         return "ok"
 
     monkeypatch.setattr(

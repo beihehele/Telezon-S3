@@ -29,7 +29,7 @@ async def test_list_objects_v2_prefix(mock_db, monkeypatch):
     async def fake_bucket(db, name):
         return _bucket()
 
-    async def fake_verify(bucket, request, db=None, body=None):
+    async def fake_verify(bucket, request, db=None, body=None, **kwargs):
         return "ok"
 
     async def fake_list(db, bucket_name, prefix="", start_after="", max_keys=1000):
@@ -74,7 +74,7 @@ async def test_list_objects_without_list_type_defaults_to_v2(mock_db, monkeypatc
     async def fake_bucket(db, name):
         return _bucket()
 
-    async def fake_verify(bucket, request, db=None, body=None):
+    async def fake_verify(bucket, request, db=None, body=None, **kwargs):
         return "ok"
 
     async def fake_list(db, bucket_name, prefix="", start_after="", max_keys=1000):
@@ -147,7 +147,7 @@ async def test_list_objects_v2_continuation(mock_db, monkeypatch):
     async def fake_bucket(db, name):
         return _bucket()
 
-    async def fake_verify(bucket, request, db=None, body=None):
+    async def fake_verify(bucket, request, db=None, body=None, **kwargs):
         return "ok"
 
     async def fake_list(db, bucket_name, prefix="", start_after="", max_keys=1000):

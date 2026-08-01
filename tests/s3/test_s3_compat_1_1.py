@@ -46,7 +46,7 @@ async def test_get_supports_range_and_if_none_match(
     async def fake_blobs(db, filters):
         return [blob]
 
-    async def fake_verify(bucket, request, db=None, body=None):
+    async def fake_verify(bucket, request, db=None, body=None, **kwargs):
         return "ok"
 
     monkeypatch.setattr("app.s3.handlers.object.crud_get_bucket_by_name", fake_bucket)
@@ -138,7 +138,7 @@ async def test_delete_objects_batch(mock_db, fake_storage, monkeypatch):
     async def fake_bucket(db, name):
         return _bucket()
 
-    async def fake_verify(bucket, request, db=None, body=None):
+    async def fake_verify(bucket, request, db=None, body=None, **kwargs):
         return "ok"
 
     async def fake_delete(db, bucket_name, path):

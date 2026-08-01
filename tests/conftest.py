@@ -42,7 +42,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.db.tables import Base, BlobRow
-from app.storage.backend import PutFileResult
+from app.storage.backend import PutFileResult, media_group_source_bytes
 
 
 class FakeStorage:
@@ -55,22 +55,22 @@ class FakeStorage:
         self.forward_calls = []
         self.put_calls = 0
 
-    async def put_file(self, file: bytes, filename: str, **kwargs) -> PutFileResult:
+    async def put_file(self, file, filename: str, **kwargs) -> PutFileResult:
         self.put_calls += 1
         self.last_put_kwargs = kwargs
         self._msg += 1
         file_id = f"file-{self._msg}"
-        self.files[file_id] = file
+        self.files[file_id] = media_group_source_bytes(file)
         return PutFileResult(file_id=file_id, message_id=self._msg)
 
     async def send_media_group(self, documents, **kwargs):
         self.media_group_calls += 1
         results = []
         grouped_id = self._msg + 1
-        for data, name in documents:
+        for source, name in documents:
             self._msg += 1
             file_id = f"file-{self._msg}"
-            self.files[file_id] = data
+            self.files[file_id] = media_group_source_bytes(source)
             results.append(
                 PutFileResult(
                     file_id=file_id,

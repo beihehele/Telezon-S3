@@ -38,7 +38,7 @@ async def test_head_returns_headers_when_authorized(mock_db, fake_storage, monke
     async def fake_blobs(db, filters):
         return [blob]
 
-    async def fake_verify(bucket, request, db=None, body=None):
+    async def fake_verify(bucket, request, db=None, body=None, **kwargs):
         return "ok"
 
     monkeypatch.setattr("app.s3.handlers.object.crud_get_bucket_by_name", fake_bucket)
@@ -69,7 +69,7 @@ async def test_head_rejects_unauthorized(mock_db, monkeypatch):
     async def fake_bucket(db, name):
         return _bucket()
 
-    async def fake_verify(bucket, request, db=None, body=None):
+    async def fake_verify(bucket, request, db=None, body=None, **kwargs):
         return "signature"
 
     monkeypatch.setattr("app.s3.handlers.object.crud_get_bucket_by_name", fake_bucket)
@@ -119,7 +119,7 @@ async def test_delete_calls_telegram_when_message_id_present(
     async def fake_bucket(db, name):
         return _bucket()
 
-    async def fake_verify(bucket, request, db=None, body=None):
+    async def fake_verify(bucket, request, db=None, body=None, **kwargs):
         return "ok"
 
     calls = {"n": 0}
@@ -164,7 +164,7 @@ async def test_empty_key_rejected(mock_db, monkeypatch):
     async def fake_bucket(db, name):
         return _bucket()
 
-    async def fake_verify(bucket, request, db=None, body=None):
+    async def fake_verify(bucket, request, db=None, body=None, **kwargs):
         return "ok"
 
     monkeypatch.setattr("app.s3.handlers.object.crud_get_bucket_by_name", fake_bucket)
@@ -215,7 +215,7 @@ async def test_delete_without_message_id_skips_telegram(
     async def fake_bucket(db, name):
         return _bucket()
 
-    async def fake_verify(bucket, request, db=None, body=None):
+    async def fake_verify(bucket, request, db=None, body=None, **kwargs):
         return "ok"
 
     async def fake_delete(db, bucket_name, path):
@@ -258,7 +258,7 @@ async def test_put_overwrite_soft_deletes_previous(mock_db, fake_storage, monkey
     async def fake_bucket(db, name):
         return _bucket()
 
-    async def fake_verify(bucket, request, db=None, body=None):
+    async def fake_verify(bucket, request, db=None, body=None, **kwargs):
         return "ok"
 
     async def fake_get_all(db, filters):
@@ -313,7 +313,7 @@ async def test_put_get_roundtrip(mock_db, fake_storage, monkeypatch):
     async def fake_bucket(db, name):
         return _bucket()
 
-    async def fake_verify(bucket, request, db=None, body=None):
+    async def fake_verify(bucket, request, db=None, body=None, **kwargs):
         return "ok"
 
     async def fake_get_all(db, filters):
@@ -364,7 +364,7 @@ async def test_put_rejects_entity_too_large(mock_db, monkeypatch):
     async def fake_bucket(db, name):
         return _bucket()
 
-    async def fake_verify(bucket, request, db=None, body=None):
+    async def fake_verify(bucket, request, db=None, body=None, **kwargs):
         return "ok"
 
     monkeypatch.setattr("app.s3.handlers.object.crud_get_bucket_by_name", fake_bucket)
@@ -421,7 +421,7 @@ async def test_put_returns_service_unavailable(mock_db, monkeypatch):
     async def fake_bucket(db, name):
         return _bucket()
 
-    async def fake_verify(bucket, request, db=None, body=None):
+    async def fake_verify(bucket, request, db=None, body=None, **kwargs):
         return "ok"
 
     async def fake_get_all(db, filters):
@@ -458,7 +458,7 @@ async def test_put_returns_slow_down_on_throttle(mock_db, monkeypatch):
     async def fake_bucket(db, name):
         return _bucket()
 
-    async def fake_verify(bucket, request, db=None, body=None):
+    async def fake_verify(bucket, request, db=None, body=None, **kwargs):
         return "ok"
 
     async def fake_get_all(db, filters):

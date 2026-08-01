@@ -94,6 +94,7 @@ class AWSSigV4Verifier(object):
         service,
         key_mapping,
         timestamp_mismatch=60,
+        payload_sha256_hex=None,
     ):
         """
         # pylint: disable=line-too-long
@@ -140,6 +141,7 @@ class AWSSigV4Verifier(object):
         self.service = service
         self.key_mapping = key_mapping
         self.timestamp_mismatch = timestamp_mismatch
+        self.payload_sha256_hex = payload_sha256_hex
         return
 
     @property
@@ -374,6 +376,8 @@ class AWSSigV4Verifier(object):
         # Payload not signed if transfered securely via HTTPS
         if self.headers.get("x-amz-content-sha256") == "UNSIGNED-PAYLOAD":
             hashed_payload = "UNSIGNED-PAYLOAD"
+        elif self.payload_sha256_hex is not None:
+            hashed_payload = self.payload_sha256_hex
         else:
             hashed_payload = sha256(self.body).hexdigest()
 

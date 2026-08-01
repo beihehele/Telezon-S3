@@ -1,8 +1,19 @@
 from abc import ABC, abstractmethod
+from pathlib import Path
+from typing import Union
 
 from pydantic import BaseModel
 
 from app.storage.errors import StorageUnavailableError
+
+MediaGroupSource = Union[bytes, str, Path]
+PutFileSource = MediaGroupSource
+
+
+def media_group_source_bytes(source: MediaGroupSource) -> bytes:
+    if isinstance(source, bytes):
+        return source
+    return Path(source).read_bytes()
 
 
 class PutFileResult(BaseModel):
@@ -15,7 +26,7 @@ class Storage(ABC):
     @abstractmethod
     async def put_file(
         self,
-        file: bytes,
+        file: PutFileSource,
         filename: str,
         *,
         chat_id: str | None = None,
@@ -44,16 +55,19 @@ class Storage(ABC):
 
     async def send_media_group(
         self,
-        documents: list[tuple[bytes, str]],
+        documents: list[tuple[MediaGroupSource, str]],
         *,
         chat_id: str | None = None,
         topic_id: int | None = None,
     ) -> list[PutFileResult]:
         results: list[PutFileResult] = []
-        for data, name in documents:
+        for source, name in documents:
             results.append(
                 await self.put_file(
-                    data, name, chat_id=chat_id, topic_id=topic_id
+                    media_group_source_bytes(source),
+                    name,
+                    chat_id=chat_id,
+                    topic_id=topic_id,
                 )
             )
         return results

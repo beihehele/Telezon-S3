@@ -125,10 +125,15 @@ async def verify_sigv4(
     key_mapping: dict[str, str],
     *,
     body: bytes | None = None,
+    payload_sha256_hex: str | None = None,
     timestamp_mismatch: int | None = DEFAULT_TIMESTAMP_MISMATCH_SECONDS,
 ) -> bool:
     if body is None:
-        if request.method.upper() in {"GET", "HEAD", "DELETE"}:
+        if payload_sha256_hex is not None or request.method.upper() in {
+            "GET",
+            "HEAD",
+            "DELETE",
+        }:
             body = b""
         else:
             body = await request.body()
@@ -154,6 +159,7 @@ async def verify_sigv4(
         service="s3",
         key_mapping=key_mapping,
         timestamp_mismatch=timestamp_mismatch,
+        payload_sha256_hex=payload_sha256_hex,
     )
     try:
         verifier.verify()
@@ -229,6 +235,7 @@ async def authorize_request_for_bucket(
     db: AsyncSession | None = None,
     *,
     body: bytes | None = None,
+    payload_sha256_hex: str | None = None,
 ) -> str:
     """Return AUTH_OK / AUTH_SIGNATURE / AUTH_DENIED / AUTH_MISSING."""
     owner = bucket.owner
@@ -237,6 +244,7 @@ async def authorize_request_for_bucket(
             request,
             {owner.access_key_id: owner.secret_key},
             body=body,
+            payload_sha256_hex=payload_sha256_hex,
         )
         return AUTH_OK if ok else AUTH_SIGNATURE
 
@@ -261,6 +269,7 @@ async def authorize_request_for_bucket(
         request,
         {identity.access_key_id: identity.secret_key},
         body=body,
+        payload_sha256_hex=payload_sha256_hex,
     ):
         return AUTH_SIGNATURE
 

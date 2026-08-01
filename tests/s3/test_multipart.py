@@ -31,7 +31,7 @@ async def test_multipart_create_upload_part_complete(mock_db, fake_storage, monk
     async def fake_bucket(db, name):
         return _bucket()
 
-    async def fake_verify(bucket, request, db=None, body=None):
+    async def fake_verify(bucket, request, db=None, body=None, **kwargs):
         return "ok"
 
     store = {}

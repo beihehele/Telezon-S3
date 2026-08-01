@@ -16,7 +16,10 @@ from app.s3.auth import (
     authorize_request_for_bucket,
     precheck_request_for_bucket,
 )
-from app.s3.body import BodyTooLarge, read_body_capped, reject_oversized_content_length
+from app.s3 import stream_upload
+from app.s3.body import BodyTooLarge, reject_oversized_content_length, stream_body_to_file
+from app.s3.stream_upload import SHA_MISMATCH
+from app.storage.put_staging import new_put_staging_file
 from app.s3.errors import s3_error_response
 from app.s3.list_query import looks_like_list_objects
 from app.s3.handlers.list_objects import list_objects
@@ -194,103 +197,133 @@ async def put_object(
     if pre != AUTH_OK:
         return auth_error_response(pre, resource)
 
-    try:
-        body = await read_body_capped(request, MAX_UPLOAD_BYTES)
-    except BodyTooLarge as exc:
-        return _entity_too_large(resource, exc.size)
-
-    auth = await authorize_request_for_bucket(bucket, request, db, body=body)
-    if auth != AUTH_OK:
-        return auth_error_response(auth, resource)
-
-    size = len(body)
     sse_key = request.headers.get("x-amz-server-side-encryption-customer-key")
     sse_md5 = request.headers.get("x-amz-server-side-encryption-customer-key-md5")
-    sse_nonce = None
-    sse_tag = None
-    encrypted = False
-    store_body = body
-    response_headers = {}
-    if sse_key:
+
+    pre_auth = await stream_upload.authorize_before_stream(bucket, request, db)
+    if pre_auth not in (AUTH_OK, stream_upload.DEFER_STREAM_AUTH):
+        return auth_error_response(pre_auth, resource)
+
+    staging_path = new_put_staging_file()
+    try:
         try:
-            if sse_md5 and sse_md5 != sse_key_md5_b64(sse_key):
-                return s3_error_response(
-                    status_code=400,
-                    code="InvalidRequest",
-                    message="SSE customer key MD5 mismatch",
-                    resource=resource,
-                )
-            store_body, sse_nonce, sse_tag = encrypt_sse_c(
-                body, sse_key, aad=_sse_aad(bucket_name, key)
+            size, _, sha256_hex = await stream_body_to_file(
+                request, staging_path, MAX_UPLOAD_BYTES
             )
-            encrypted = True
-            response_headers["x-amz-server-side-encryption-customer-algorithm"] = (
-                "AES256"
-            )
-            response_headers["x-amz-server-side-encryption-customer-key-md5"] = (
-                sse_key_md5_b64(sse_key)
-            )
-        except SseError as exc:
+        except BodyTooLarge as exc:
+            return _entity_too_large(resource, exc.size)
+        except OSError:
+            return _service_unavailable(resource)
+
+        auth = await stream_upload.finalize_streamed_payload(
+            bucket,
+            request,
+            db,
+            sha256_hex=sha256_hex,
+            staging_path=staging_path,
+            pre_authenticated=pre_auth == AUTH_OK,
+        )
+        if auth == SHA_MISMATCH:
             return s3_error_response(
                 status_code=400,
                 code="InvalidRequest",
-                message=str(exc),
+                message="x-amz-content-sha256 does not match request payload",
                 resource=resource,
             )
+        if auth != AUTH_OK:
+            return auth_error_response(auth, resource)
 
-    filters = BlobFilterParams(path=key, bucket_name=bucket_name)
-    blobs = await crud_get_all_blobs(db, filters)
-    update = len(blobs) > 0
-    previous_message_id = blobs[0].message_id if update else None
-    previous_parts = blobs[0].parts if update else None
-    blob = BlobInCreate(**blobs[0].model_dump()) if update else BlobInCreate(path=key)
+        sse_nonce = None
+        sse_tag = None
+        encrypted = False
+        response_headers = {}
+        if sse_key:
+            try:
+                if sse_md5 and sse_md5 != sse_key_md5_b64(sse_key):
+                    return s3_error_response(
+                        status_code=400,
+                        code="InvalidRequest",
+                        message="SSE customer key MD5 mismatch",
+                        resource=resource,
+                    )
+                plaintext = staging_path.read_bytes()
+                store_body, sse_nonce, sse_tag = encrypt_sse_c(
+                    plaintext, sse_key, aad=_sse_aad(bucket_name, key)
+                )
+                encrypted = True
+                response_headers["x-amz-server-side-encryption-customer-algorithm"] = (
+                    "AES256"
+                )
+                response_headers["x-amz-server-side-encryption-customer-key-md5"] = (
+                    sse_key_md5_b64(sse_key)
+                )
+            except SseError as exc:
+                return s3_error_response(
+                    status_code=400,
+                    code="InvalidRequest",
+                    message=str(exc),
+                    resource=resource,
+                )
+        else:
+            store_body = staging_path
 
-    blob.content_type = request.headers.get("content-type", "application/octet-stream")
-    blob.size = size
-    blob.encrypted = encrypted
-    blob.sse_nonce = sse_nonce
-    blob.sse_tag = sse_tag
-    blob.parts = None
+        filters = BlobFilterParams(path=key, bucket_name=bucket_name)
+        blobs = await crud_get_all_blobs(db, filters)
+        update = len(blobs) > 0
+        previous_message_id = blobs[0].message_id if update else None
+        previous_parts = blobs[0].parts if update else None
+        blob = BlobInCreate(**blobs[0].model_dump()) if update else BlobInCreate(path=key)
 
-    tg_label = key
-    if TG_OPAQUE_FILENAMES:
-        blob.storage_id = new_storage_id()
-        tg_label = tg_document_label(blob.storage_id)
-
-    try:
-        put_result = await storage.put_file(
-            store_body,
-            tg_label,
-            chat_id=getattr(bucket, "telegram_chat_id", None),
-            topic_id=getattr(bucket, "telegram_topic_id", None),
+        blob.content_type = request.headers.get(
+            "content-type", "application/octet-stream"
         )
-    except StorageThrottleError:
-        return _slow_down(resource)
-    except StorageUnavailableError:
-        return _service_unavailable(resource)
+        blob.size = size
+        blob.encrypted = encrypted
+        blob.sse_nonce = sse_nonce
+        blob.sse_tag = sse_tag
+        blob.parts = None
 
-    blob.file = put_result.file_id
-    blob.message_id = put_result.message_id
-    await crud_create_blob(db, blob, bucket_name, update)
-    cache_delete(bucket_name, key)
+        tg_label = key
+        if TG_OPAQUE_FILENAMES:
+            blob.storage_id = new_storage_id()
+            tg_label = tg_document_label(blob.storage_id)
 
-    if update and (previous_message_id is not None or previous_parts):
-        from app.s3.object_lifecycle import (
-            bypass_trash_requested,
-            retire_previous_version,
-        )
+        try:
+            put_result = await storage.put_file(
+                store_body,
+                tg_label,
+                chat_id=getattr(bucket, "telegram_chat_id", None),
+                topic_id=getattr(bucket, "telegram_topic_id", None),
+            )
+        except StorageThrottleError:
+            return _slow_down(resource)
+        except StorageUnavailableError:
+            return _service_unavailable(resource)
 
-        previous_snapshot = blobs[0]
-        await retire_previous_version(
-            db,
-            previous_snapshot,
-            bucket_name=bucket_name,
-            chat_id=getattr(bucket, "telegram_chat_id", None),
-            bypass_trash=bypass_trash_requested(request),
-        )
+        blob.file = put_result.file_id
+        blob.message_id = put_result.message_id
+        await crud_create_blob(db, blob, bucket_name, update)
+        cache_delete(bucket_name, key)
 
-    response_headers["ETag"] = object_etag(blob)
-    return Response(status_code=200, headers=response_headers)
+        if update and (previous_message_id is not None or previous_parts):
+            from app.s3.object_lifecycle import (
+                bypass_trash_requested,
+                retire_previous_version,
+            )
+
+            previous_snapshot = blobs[0]
+            await retire_previous_version(
+                db,
+                previous_snapshot,
+                bucket_name=bucket_name,
+                chat_id=getattr(bucket, "telegram_chat_id", None),
+                bypass_trash=bypass_trash_requested(request),
+            )
+
+        response_headers["ETag"] = object_etag(blob)
+        return Response(status_code=200, headers=response_headers)
+    finally:
+        staging_path.unlink(missing_ok=True)
 
 
 @router.post("/{bucket_name}/{key:path}")
