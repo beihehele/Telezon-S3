@@ -164,6 +164,9 @@ async def run_gc_once() -> dict:
                         logger.exception(
                             "GC: failed deleting part message %s", part.get("message_id")
                         )
+            from app.storage.mpu_staging import remove_upload_staging
+
+            remove_upload_staging(upload_id)
             await crud_delete_multipart_upload(session, upload_id)
             aborted += 1
 

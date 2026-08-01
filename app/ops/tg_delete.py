@@ -62,6 +62,12 @@ async def safe_delete_tg_message(
 ) -> bool:
     if message_id is None:
         return True
+    if db is not None:
+        from app.crud.tg_refs import count_message_id_refs
+
+        refs = await count_message_id_refs(db, int(message_id))
+        if refs > 0:
+            return True
     try:
         ok = await _storage().delete_message(message_id, chat_id=chat_id)
         if ok:
@@ -85,6 +91,12 @@ async def retry_pending_tg_deletes(db: AsyncSession, *, limit: int = 50) -> int:
         chat_id = row.chat_id
         if message_id is None:
             await db.delete(row)
+            continue
+        from app.crud.tg_refs import count_message_id_refs
+
+        if await count_message_id_refs(db, int(message_id)) > 0:
+            await db.delete(row)
+            cleared += 1
             continue
         try:
             ok = await _storage().delete_message(message_id, chat_id=chat_id)

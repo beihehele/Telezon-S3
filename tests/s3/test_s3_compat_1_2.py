@@ -117,7 +117,7 @@ async def test_copy_object_rejects_oversized(mock_db, fake_storage, monkeypatch)
         file="file-big",
         content_type="application/octet-stream",
         size=100,
-        bucket=_bucket(),
+        bucket=_bucket("archive"),
         owner=_owner(),
     )
     store = {"big.bin": src}
@@ -167,7 +167,7 @@ async def test_copy_object_rejects_oversized(mock_db, fake_storage, monkeypatch)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.put(
                 "/alice/dst-big.bin",
-                headers={"x-amz-copy-source": "/alice/big.bin"},
+                headers={"x-amz-copy-source": "/archive/big.bin"},
             )
             assert resp.status_code == 400
             assert "EntityTooLarge" in resp.text

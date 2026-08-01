@@ -2,6 +2,8 @@ import secrets
 from datetime import datetime, timezone
 from typing import List
 
+from app.storage.tg_label import new_storage_id
+
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,6 +26,7 @@ async def crud_create_multipart_upload(
         key=key,
         content_type=content_type,
         owner_access_key=owner_access_key,
+        storage_id=new_storage_id(),
         initiated_at=datetime.now(timezone.utc),
     )
     db.add(row)
@@ -70,8 +73,9 @@ async def crud_upsert_part(
     part_number: int,
     etag: str,
     size: int,
-    file_id: str,
-    message_id: int | None,
+    file_id: str = "",
+    message_id: int | None = None,
+    staging_path: str | None = None,
 ) -> dict | None:
     previous = await crud_get_part(db, upload_id, part_number)
     result = await db.execute(
@@ -87,15 +91,17 @@ async def crud_upsert_part(
             part_number=part_number,
             etag=etag,
             size=size,
-            file_id=file_id,
+            file_id=file_id or "",
             message_id=message_id,
+            staging_path=staging_path,
         )
         db.add(row)
     else:
         row.etag = etag
         row.size = size
-        row.file_id = file_id
+        row.file_id = file_id or ""
         row.message_id = message_id
+        row.staging_path = staging_path
     await db.flush()
     return previous
 
@@ -176,6 +182,7 @@ def _upload_to_dict(row: MultipartUploadRow) -> dict:
         "key": row.key,
         "content_type": row.content_type,
         "owner_access_key": row.owner_access_key,
+        "storage_id": row.storage_id,
         "initiated_at": row.initiated_at,
     }
 
@@ -188,4 +195,5 @@ def _part_to_dict(row: MultipartPartRow) -> dict:
         "size": row.size,
         "file_id": row.file_id,
         "message_id": row.message_id,
+        "staging_path": row.staging_path,
     }

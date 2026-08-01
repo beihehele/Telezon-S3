@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 from starlette.responses import JSONResponse
 
-from app.core.config import MAX_UPLOAD_BYTES
+from app.core.config import MAX_UPLOAD_BYTES, TG_OPAQUE_FILENAMES
 from app.crud.blob import crud_create_blob, crud_get_all_blobs
 from app.crud.bucket import crud_get_bucket_by_name
 from app.crud.user import crud_get_user_by_access_key_id
@@ -15,6 +15,7 @@ from app.s3.body import BodyTooLarge, read_body_capped
 from app.storage import storage
 from app.storage.disk_cache import cache_delete
 from app.storage.errors import StorageThrottleError, StorageUnavailableError
+from app.storage.tg_label import new_storage_id, tg_document_label
 
 router = APIRouter(prefix="/upload", tags=["SimpleUpload"])
 
@@ -68,9 +69,11 @@ async def simple_upload(
     previous = existing[0] if update else None
 
     try:
+        storage_id = new_storage_id() if TG_OPAQUE_FILENAMES else None
+        tg_name = tg_document_label(storage_id) if storage_id else key
         put_result = await storage.put_file(
             body,
-            key,
+            tg_name,
             chat_id=getattr(bucket_row, "telegram_chat_id", None),
             topic_id=getattr(bucket_row, "telegram_topic_id", None),
         )
@@ -81,6 +84,7 @@ async def simple_upload(
 
     blob = BlobInCreate(
         path=key,
+        storage_id=storage_id,
         file=put_result.file_id,
         content_type=request.headers.get("content-type", "application/octet-stream"),
         size=len(body),

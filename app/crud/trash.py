@@ -6,7 +6,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import TRASH_RETENTION_SECONDS
-from app.db.mappers import parts_to_json, trash_from_row
+from app.db.mappers import parts_to_json, trash_from_row, _albums_to_json
 from app.db.tables import TrashRow
 from app.models.blob import BlobInDb
 from app.models.trash import TrashItem
@@ -32,6 +32,9 @@ async def crud_insert_trash_from_blob(
         trash_id=uuid.uuid4().hex,
         bucket_name=blob.bucket_name,
         path=blob.path,
+        storage_id=blob.storage_id,
+        telegram_grouped_id=blob.telegram_grouped_id,
+        telegram_albums=blob.telegram_albums,
         file=blob.file or "",
         content_type=blob.content_type or "",
         size=int(blob.size or 0),
@@ -51,6 +54,9 @@ async def crud_insert_trash_from_blob(
         trash_id=item.trash_id,
         bucket_name=item.bucket_name,
         path=item.path,
+        storage_id=item.storage_id,
+        telegram_grouped_id=item.telegram_grouped_id,
+        telegram_albums=_albums_to_json(item.telegram_albums),
         file=item.file,
         content_type=item.content_type,
         size=item.size,

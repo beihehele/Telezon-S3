@@ -11,6 +11,9 @@ class TrashItem(DateTimeModelMixin):
     trash_id: str
     bucket_name: str
     path: str
+    storage_id: str | None = None
+    telegram_grouped_id: int | None = None
+    telegram_albums: list | None = None
     file: str = ""
     content_type: str = ""
     size: int = 0

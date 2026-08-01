@@ -1,4 +1,6 @@
 import os
+import tempfile
+from pathlib import Path
 
 import uvicorn
 from dotenv import load_dotenv
@@ -109,3 +111,14 @@ SHARE_LOCKOUT_SECONDS = int(os.getenv("SHARE_LOCKOUT_SECONDS", "900"))
 
 # When 1, /api/health includes database/telegram error strings (avoid on public URLs).
 HEALTH_EXPOSE_ERRORS = os.getenv("HEALTH_EXPOSE_ERRORS", "0") == "1"
+
+# 0.11 opaque TG names + MPU albums
+TG_OPAQUE_FILENAMES = os.getenv("TG_OPAQUE_FILENAMES", "1") == "1"
+TG_ALBUM_MAX_ITEMS = max(1, min(int(os.getenv("TG_ALBUM_MAX_ITEMS", "10")), 10))
+_mpu_staging = os.getenv("MPU_STAGING_DIR", "").strip()
+if _mpu_staging:
+    MPU_STAGING_DIR = _mpu_staging
+elif CACHE_DIR:
+    MPU_STAGING_DIR = str(Path(CACHE_DIR) / "mpu-staging")
+else:
+    MPU_STAGING_DIR = str(Path(tempfile.gettempdir()) / "telezon-mpu-staging")

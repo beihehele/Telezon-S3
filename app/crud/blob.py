@@ -4,7 +4,7 @@ from typing import List
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.mappers import blob_from_row, blob_in_db_from_row, parts_to_json
+from app.db.mappers import blob_from_row, blob_in_db_from_row, parts_to_json, _albums_to_json
 from app.db.path_digest import blob_path_digest
 from app.db.sql_like import escape_like_prefix
 from app.db.tables import BlobRow, BucketRow, UserRow
@@ -45,6 +45,9 @@ async def crud_create_blob(
             bucket_name=bucket_name,
             path=data_blob.path,
             path_digest=blob_path_digest(bucket_name, data_blob.path),
+            storage_id=data_blob.storage_id,
+            telegram_grouped_id=data_blob.telegram_grouped_id,
+            telegram_albums=_albums_to_json(data_blob.telegram_albums),
             file=data_blob.file or "",
             content_type=data_blob.content_type or "",
             size=int(data_blob.size or 0),
@@ -69,6 +72,9 @@ async def crud_create_blob(
             )
         )
         row = result.scalar_one()
+        row.storage_id = data_blob.storage_id
+        row.telegram_grouped_id = data_blob.telegram_grouped_id
+        row.telegram_albums = _albums_to_json(data_blob.telegram_albums)
         row.file = data_blob.file or ""
         row.content_type = data_blob.content_type or ""
         row.size = int(data_blob.size or 0)
@@ -118,6 +124,38 @@ async def crud_list_blobs_for_s3(
     stmt = stmt.order_by(BlobRow.path.asc()).limit(max_keys)
     result = await db.execute(stmt)
     return [blob_in_db_from_row(row) for row in result.scalars().all()]
+
+
+async def crud_rename_blob(
+    db: AsyncSession,
+    bucket_name: str,
+    old_path: str,
+    new_path: str,
+) -> BlobInDb:
+    if old_path == new_path:
+        raise ValueError("paths must differ")
+    result = await db.execute(
+        select(BlobRow).where(
+            BlobRow.bucket_name == bucket_name,
+            BlobRow.path == old_path,
+        )
+    )
+    row = result.scalar_one_or_none()
+    if not row:
+        raise LookupError("source not found")
+    conflict = await db.execute(
+        select(BlobRow.id).where(
+            BlobRow.bucket_name == bucket_name,
+            BlobRow.path == new_path,
+        )
+    )
+    if conflict.scalar_one_or_none() is not None:
+        raise FileExistsError(new_path)
+    row.path = new_path
+    row.path_digest = blob_path_digest(bucket_name, new_path)
+    row.updated_at = datetime.now(timezone.utc)
+    await db.flush()
+    return blob_in_db_from_row(row)
 
 
 async def crud_sample_blobs(db: AsyncSession, limit: int) -> List[BlobInDb]:

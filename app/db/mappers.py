@@ -71,9 +71,32 @@ def bucket_from_rows(bucket: BucketRow, owner: UserRow, size: int = 0) -> Bucket
     )
 
 
+def _albums_from_json(raw: list | None) -> list | None:
+    if not raw:
+        return None
+    from app.models.blob import TelegramAlbumMeta
+
+    return [TelegramAlbumMeta(**a) if isinstance(a, dict) else a for a in raw]
+
+
+def _albums_to_json(albums: Any) -> list | None:
+    if not albums:
+        return None
+    out = []
+    for a in albums:
+        if hasattr(a, "model_dump"):
+            out.append(a.model_dump())
+        elif isinstance(a, dict):
+            out.append(a)
+    return out or None
+
+
 def blob_in_db_from_row(row: BlobRow) -> BlobInDb:
     return BlobInDb(
         path=row.path,
+        storage_id=row.storage_id,
+        telegram_grouped_id=row.telegram_grouped_id,
+        telegram_albums=_albums_from_json(row.telegram_albums),
         file=row.file or "",
         content_type=row.content_type or "",
         size=int(row.size or 0),
@@ -131,6 +154,9 @@ def trash_from_row(row: TrashRow) -> TrashItem:
         trash_id=row.trash_id,
         bucket_name=row.bucket_name,
         path=row.path,
+        storage_id=row.storage_id,
+        telegram_grouped_id=row.telegram_grouped_id,
+        telegram_albums=row.telegram_albums,
         file=row.file or "",
         content_type=row.content_type or "",
         size=int(row.size or 0),

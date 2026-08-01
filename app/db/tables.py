@@ -86,6 +86,9 @@ class BlobRow(Base):
     )
     path: Mapped[str] = mapped_column(Text, nullable=False)
     path_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    storage_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    telegram_grouped_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    telegram_albums: Mapped[list | None] = mapped_column(JSON, nullable=True)
     file: Mapped[str] = mapped_column(String(512), default="")
     content_type: Mapped[str] = mapped_column(String(255), default="")
     size: Mapped[int] = mapped_column(BigInteger, default=0)
@@ -149,6 +152,9 @@ class TrashRow(Base):
     trash_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     bucket_name: Mapped[str] = mapped_column(String(255), index=True, nullable=False)
     path: Mapped[str] = mapped_column(Text, nullable=False)
+    storage_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    telegram_grouped_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    telegram_albums: Mapped[list | None] = mapped_column(JSON, nullable=True)
     file: Mapped[str] = mapped_column(String(512), default="")
     content_type: Mapped[str] = mapped_column(String(255), default="")
     size: Mapped[int] = mapped_column(BigInteger, default=0)
@@ -177,6 +183,7 @@ class MultipartUploadRow(Base):
     key: Mapped[str] = mapped_column(Text, nullable=False)
     content_type: Mapped[str] = mapped_column(String(255), default="")
     owner_access_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    storage_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     initiated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
@@ -197,6 +204,7 @@ class MultipartPartRow(Base):
     etag: Mapped[str] = mapped_column(String(128), default="")
     size: Mapped[int] = mapped_column(BigInteger, default=0)
     file_id: Mapped[str] = mapped_column(String(512), default="")
+    staging_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
 

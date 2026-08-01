@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+_Nothing yet._
+
+## 0.11.0 — 2026-08-01
+
+### Features
+- **Opaque Telegram filenames** (`TG_OPAQUE_FILENAMES`, default on): uploads use `{storage_id}.bin` / `.partN`, not the S3 key.
+- **REST rename:** `POST /api/v1/buckets/{bucket}/objects/rename` with `{ "from", "to" }` (JWT owner/admin); metadata-only, ETag unchanged.
+- **Same-bucket CopyObject:** metadata fast path (shared `file_id` / `message_id` / `parts`); no re-upload.
+- **Cross-bucket CopyObject:** Telegram `forward_messages` when source/dest `telegram_chat_id` are set; falls back to download+upload.
+- **Multipart (方案 A):** UploadPart stages to `MPU_STAGING_DIR`; Complete sends **1–N media groups** (`TG_ALBUM_MAX_ITEMS`, default 10); Abort/GC remove staging.
+- **TG delete refcount:** `count_message_id_refs` before `delete_messages` (live, trash, multipart_parts, `parts` JSON).
+
+### Schema (manual SQL — no Alembic)
+- `blobs` / `trash`: `storage_id`, `telegram_grouped_id`, `telegram_albums` (JSON).
+- `multipart_uploads.storage_id`, `multipart_parts.staging_path`.
+- See `docs/DEPLOY.zh-CN.md` §0.11 and `docs/superpowers/specs/2026-08-01-opaque-tg-names-and-rename-design.zh-CN.md` §6.2.
+
+### Config
+- `TG_OPAQUE_FILENAMES`, `TG_ALBUM_MAX_ITEMS`, `MPU_STAGING_DIR` (defaults under `CACHE_DIR` or system temp when unset).
+
 ## 0.10.10 — 2026-08-01
 
 ### Fixes / tests

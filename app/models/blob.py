@@ -20,10 +20,20 @@ class BlobPart(BaseModel):
     size: int = 0
     message_id: int | None = None
     etag: str = ""
+    album_index: int | None = None
+
+
+class TelegramAlbumMeta(BaseModel):
+    grouped_id: int
+    part_start: int
+    part_end: int
 
 
 class BlobBase(BaseModel):
     path: str
+    storage_id: str | None = None
+    telegram_grouped_id: int | None = None
+    telegram_albums: list[TelegramAlbumMeta] | None = None
     file: str = ""
     content_type: str = ""
     size: int = 0

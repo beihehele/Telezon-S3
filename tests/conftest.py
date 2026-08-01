@@ -30,6 +30,12 @@ os.environ.setdefault("ENABLE_GC", "0")
 os.environ.setdefault("TG_RATE_LIMIT_PER_SEC", "20")
 os.environ.setdefault("TG_RATE_BURST", "20")
 os.environ.setdefault("TG_RATE_WAIT_SECONDS", "30")
+import tempfile
+
+os.environ.setdefault(
+    "MPU_STAGING_DIR",
+    tempfile.mkdtemp(prefix="telezon-mpu-test-"),
+)
 
 import pytest
 from sqlalchemy import select
@@ -45,13 +51,62 @@ class FakeStorage:
         self.deleted_messages = []
         self._msg = 100
         self.last_put_kwargs = {}
+        self.media_group_calls = 0
+        self.forward_calls = []
+        self.put_calls = 0
 
     async def put_file(self, file: bytes, filename: str, **kwargs) -> PutFileResult:
+        self.put_calls += 1
         self.last_put_kwargs = kwargs
         self._msg += 1
         file_id = f"file-{self._msg}"
         self.files[file_id] = file
         return PutFileResult(file_id=file_id, message_id=self._msg)
+
+    async def send_media_group(self, documents, **kwargs):
+        self.media_group_calls += 1
+        results = []
+        grouped_id = self._msg + 1
+        for data, name in documents:
+            self._msg += 1
+            file_id = f"file-{self._msg}"
+            self.files[file_id] = data
+            results.append(
+                PutFileResult(
+                    file_id=file_id,
+                    message_id=self._msg,
+                    grouped_id=grouped_id,
+                )
+            )
+        return results
+
+    async def forward_messages(
+        self,
+        from_chat_id: str,
+        message_ids: int | list[int],
+        *,
+        chat_id: str | None = None,
+        topic_id: int | None = None,
+    ):
+        anchor = message_ids if isinstance(message_ids, int) else message_ids[0]
+        self.forward_calls.append((from_chat_id, chat_id, anchor))
+        self._msg += 1
+        grouped_id = self._msg + 1000
+        # Simulate album expand: one anchor may yield multiple documents.
+        count = getattr(self, "_forward_expand", 1)
+        out = []
+        for _ in range(count):
+            self._msg += 1
+            file_id = f"file-fwd-{self._msg}"
+            self.files[file_id] = b"forwarded"
+            out.append(
+                PutFileResult(
+                    file_id=file_id,
+                    message_id=self._msg,
+                    grouped_id=grouped_id,
+                )
+            )
+        return out
 
     async def get_file(self, file_id: str):
         return io.BytesIO(self.files[file_id])

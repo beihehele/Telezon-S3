@@ -7,7 +7,7 @@ Path-style endpoint: `http://host:port/{bucket}/{key}`
 | PutObject | Yes | Requires `Content-Length`; size stored as actual body length; optional SSE-C |
 | GetObject | Yes | Public buckets skip auth; multipart objects stream parts; optional disk cache |
 | HeadObject | Yes | Auth unless `is_public` |
-| CopyObject | Yes | `x-amz-copy-source`; download-then-upload; source read RBAC + dest write; public source OK cross-account |
+| CopyObject | Yes | Same-bucket metadata fast path (0.11); cross-bucket TG forward when chat ids set, else download-then-upload; source read RBAC + dest write |
 | DeleteObject | Yes | Default: soft-delete to trash (TG kept); `x-telezon-bypass-trash` / `ENABLE_TRASH=0` hard-deletes TG; clears disk cache |
 | DeleteObjects | Yes | Same trash/hard semantics as DeleteObject; requires `Content-MD5`; Quiet mode supported |
 | ListObjectsV2 | Yes | `list-type=2`, prefix, continuation, **delimiter / CommonPrefixes** |
@@ -20,14 +20,14 @@ Path-style endpoint: `http://host:port/{bucket}/{key}`
 | Presigned GET/PUT | Yes | Max 7 days; `POST /api/v1/presign`; prefers `PUBLIC_BASE_URL` |
 | Multi-credential RBAC | Yes | `POST /api/v1/credentials` — `readonly` / `readwrite`, optional bucket list |
 | CreateMultipartUpload | Yes | `POST ...?uploads` |
-| UploadPart | Yes | Requires `Content-Length`; capped by `MAX_UPLOAD_BYTES` |
-| CompleteMultipartUpload | Yes | Non-last parts ≥ `MULTIPART_MIN_PART_BYTES`; overwrite of live key uses trash lifecycle |
+| UploadPart | Yes | Requires `Content-Length`; capped by `MAX_UPLOAD_BYTES`; bytes staged under `MPU_STAGING_DIR` (not sent to TG until Complete) |
+| CompleteMultipartUpload | Yes | Non-last parts ≥ `MULTIPART_MIN_PART_BYTES`; sends Telegram media group(s) (≤ `TG_ALBUM_MAX_ITEMS` per album); overwrite uses trash lifecycle |
 | AbortMultipartUpload | Yes | Best-effort unused-part TG cleanup (not trash — parts never became live objects) |
 | ListParts | Yes | `GET ...?uploadId=` |
 | ListMultipartUploads | Yes | `GET /{bucket}?uploads` |
 | Share links | Yes | Humans; password + lockout; **in-memory**, capped at `MAX_UPLOAD_BYTES` |
 | Soft delete / trash | Yes | Delete/overwrite (Put, Copy, Complete MPU, Bearer upload) -> trash; REST restore; bypass for hard delete |
-| Bearer simple upload | Yes | Scripts/Shortcuts only — see [`AUTH-AND-SHARING.md`](AUTH-AND-SHARING.md) |
+| Bearer simple upload | Yes | Scripts/Shortcuts only — opaque TG name when `TG_OPAQUE_FILENAMES=1` — see [`AUTH-AND-SHARING.md`](AUTH-AND-SHARING.md) |
 | Public buckets | Yes | `is_public`: anonymous Get/Head only; List still requires SigV4 |
 | Per-bucket TG destination | Yes | `telegram_chat_id` / `telegram_topic_id` |
 | Conditional GET/HEAD | Yes | `If-Match` / `If-None-Match` / `If-Modified-Since` / `If-Unmodified-Since` |
@@ -50,6 +50,8 @@ Path-style endpoint: `http://host:port/{bucket}/{key}`
 - Credential / upload / sharing decision guide: [`AUTH-AND-SHARING.md`](AUTH-AND-SHARING.md)
 - Responses include `x-amz-request-id` / `x-amz-id-2`
 - GC also retries pending TG deletes and samples dead blob metadata (`GC_ORPHAN_SAMPLE_SIZE`)
+- **0.11:** `TG_OPAQUE_FILENAMES` (default `1`), `TG_ALBUM_MAX_ITEMS` (default `10`, max 10), `MPU_STAGING_DIR` (default `{CACHE_DIR}/mpu-staging` or temp dir)
+- **0.11 REST rename:** `POST /api/v1/buckets/{bucket}/objects/rename` (not S3 SigV4); prefer this or same-bucket Copy+Delete over Put+Delete to avoid re-upload
 
 Unsupported sub-resources (`acl`, `policy`, `tagging`, `lifecycle`, …) return **501 NotImplemented** and do not fall through to Put/Get/Delete.
 

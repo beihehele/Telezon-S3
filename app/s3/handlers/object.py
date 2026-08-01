@@ -5,7 +5,7 @@ from email.utils import format_datetime
 from fastapi import APIRouter, Depends, Request
 from starlette.responses import Response
 
-from app.core.config import MAX_UPLOAD_BYTES
+from app.core.config import MAX_UPLOAD_BYTES, TG_OPAQUE_FILENAMES
 from app.crud.blob import crud_create_blob, crud_get_all_blobs
 from app.crud.bucket import crud_get_bucket_by_name
 from app.db.session import get_database
@@ -32,6 +32,7 @@ from app.s3.subresources import reject_unsupported_subresource
 from app.s3.xml import object_etag
 from app.storage import storage
 from app.storage.disk_cache import cache_delete, cache_get, cache_put
+from app.storage.tg_label import new_storage_id, tg_document_label
 from app.storage.errors import StorageThrottleError, StorageUnavailableError
 
 router = APIRouter(tags=["S3"])
@@ -229,10 +230,15 @@ async def put_object(
     blob.sse_tag = sse_tag
     blob.parts = None
 
+    tg_label = key
+    if TG_OPAQUE_FILENAMES:
+        blob.storage_id = new_storage_id()
+        tg_label = tg_document_label(blob.storage_id)
+
     try:
         put_result = await storage.put_file(
             store_body,
-            key,
+            tg_label,
             chat_id=getattr(bucket, "telegram_chat_id", None),
             topic_id=getattr(bucket, "telegram_topic_id", None),
         )

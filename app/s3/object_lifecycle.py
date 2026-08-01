@@ -27,6 +27,9 @@ def bypass_trash_requested(request: Request | None) -> bool:
 def _as_blob_in_db(live, bucket_name: str, key: str | None = None) -> BlobInDb:
     return BlobInDb(
         path=key or live.path,
+        storage_id=getattr(live, "storage_id", None),
+        telegram_grouped_id=getattr(live, "telegram_grouped_id", None),
+        telegram_albums=getattr(live, "telegram_albums", None),
         file=getattr(live, "file", "") or "",
         content_type=getattr(live, "content_type", "") or "",
         size=int(getattr(live, "size", 0) or 0),

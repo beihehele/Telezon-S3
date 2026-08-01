@@ -50,6 +50,75 @@ class TelegramAccountStorage(Storage):
             message_id=response.id,
         )
 
+    async def send_media_group(
+        self,
+        documents: list[tuple[bytes, str]],
+        *,
+        chat_id: str | None = None,
+        topic_id: int | None = None,
+    ) -> list[PutFileResult]:
+        if not documents:
+            return []
+        await self._acquire()
+        from pyrogram.types import InputMediaDocument
+
+        client = self._require_client()
+        media = []
+        for data, name in documents:
+            document = io.BytesIO(data)
+            document.name = name
+            media.append(InputMediaDocument(document, file_name=name))
+        kwargs = pyrogram_document_topic_kwargs(topic_id)
+        messages = await client.send_media_group(
+            self._resolve_chat_id(chat_id), media, **kwargs
+        )
+        grouped_id = getattr(messages[0], "media_group_id", None) if messages else None
+        results: list[PutFileResult] = []
+        for message in messages:
+            doc = message.document
+            if doc is None:
+                continue
+            results.append(
+                PutFileResult(
+                    file_id=str(doc.file_id),
+                    message_id=message.id,
+                    grouped_id=grouped_id,
+                )
+            )
+        return results
+
+    async def forward_messages(
+        self,
+        from_chat_id: str,
+        message_ids: int | list[int],
+        *,
+        chat_id: str | None = None,
+        topic_id: int | None = None,
+    ) -> list[PutFileResult]:
+        await self._acquire()
+        client = self._require_client()
+        from_peer = self._resolve_chat_id(from_chat_id)
+        to_peer = self._resolve_chat_id(chat_id)
+        anchor = message_ids if isinstance(message_ids, int) else message_ids[0]
+        raw = await client.forward_messages(to_peer, from_peer, anchor)
+        messages = raw if isinstance(raw, list) else [raw]
+        grouped_id = getattr(messages[0], "media_group_id", None) if messages else None
+        results: list[PutFileResult] = []
+        for message in messages:
+            doc = message.document
+            if doc is None:
+                continue
+            results.append(
+                PutFileResult(
+                    file_id=str(doc.file_id),
+                    message_id=message.id,
+                    grouped_id=grouped_id,
+                )
+            )
+        if not results:
+            raise StorageUnavailableError("forward produced no documents")
+        return results
+
     async def get_file(self, file_id: str) -> io.BufferedReader:
         await self._acquire()
         client = self._require_client()

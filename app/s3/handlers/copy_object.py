@@ -6,7 +6,7 @@ from xml.sax.saxutils import escape
 from fastapi import Request
 from starlette.responses import Response
 
-from app.core.config import MAX_UPLOAD_BYTES
+from app.core.config import MAX_UPLOAD_BYTES, TG_OPAQUE_FILENAMES
 from app.crud.blob import crud_create_blob, crud_get_all_blobs
 from app.crud.bucket import crud_get_bucket_by_name
 from app.models.blob import BlobFilterParams, BlobInCreate
@@ -18,12 +18,14 @@ from app.s3.auth import (
     resolve_identity_from_request,
 )
 from app.s3.blob_io import load_blob_bytes
+from app.s3.copy_forward import try_build_cross_bucket_blob_via_forward
 from app.s3.errors import s3_error_response
 from app.s3.http_range import etag_matches
 from app.s3.xml import object_etag
 from app.storage import storage
 from app.storage.disk_cache import cache_delete
 from app.storage.errors import StorageThrottleError, StorageUnavailableError
+from app.storage.tg_label import new_storage_id, tg_document_label
 
 
 def _parse_copy_source(header: str) -> tuple[str, str] | None:
@@ -150,19 +152,63 @@ async def copy_object(
             resource=resource,
         )
 
-    # CopyObject is download-then-upload (not server-side); cap memory like PutObject.
-    src_size = int(getattr(src_blob, "size", 0) or 0)
-    if src_size > MAX_UPLOAD_BYTES:
-        return s3_error_response(
-            status_code=400,
-            code="EntityTooLarge",
-            message=(
-                f"CopyObject loads the source into memory and is limited to "
-                f"{MAX_UPLOAD_BYTES} bytes; use GetObject + PutObject or multipart "
-                f"for larger objects"
-            ),
-            resource=resource,
+    dest_existing = await crud_get_all_blobs(
+        db, BlobFilterParams(path=key, bucket_name=bucket_name)
+    )
+    update = len(dest_existing) > 0
+    previous = dest_existing[0] if update else None
+
+    if src_bucket == bucket_name:
+        content_type = (
+            request.headers.get("content-type", src_blob.content_type or "")
+            if directive == "REPLACE"
+            else src_blob.content_type or "application/octet-stream"
         )
+        blob = BlobInCreate(
+            path=key,
+            storage_id=getattr(src_blob, "storage_id", None),
+            telegram_grouped_id=getattr(src_blob, "telegram_grouped_id", None),
+            telegram_albums=getattr(src_blob, "telegram_albums", None),
+            file=src_blob.file or "",
+            content_type=content_type,
+            size=int(src_blob.size or 0),
+            message_id=src_blob.message_id,
+            parts=src_blob.parts,
+            sse_nonce=src_blob.sse_nonce,
+            sse_tag=src_blob.sse_tag,
+            encrypted=bool(src_blob.encrypted),
+        )
+        await crud_create_blob(db, blob, bucket_name, update)
+        cache_delete(bucket_name, key)
+        if previous:
+            from app.s3.object_lifecycle import (
+                bypass_trash_requested,
+                retire_previous_version,
+            )
+
+            await retire_previous_version(
+                db,
+                previous,
+                bucket_name=bucket_name,
+                chat_id=getattr(dest_bucket, "telegram_chat_id", None),
+                bypass_trash=bypass_trash_requested(request),
+            )
+        etag = object_etag(blob)
+        body = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            "<CopyObjectResult>"
+            f"<LastModified>{_fmt_iso(datetime.now(timezone.utc))}</LastModified>"
+            f"<ETag>{escape(etag)}</ETag>"
+            "</CopyObjectResult>"
+        )
+        return Response(content=body, media_type="application/xml", headers={"ETag": etag})
+
+    if directive == "REPLACE":
+        content_type = request.headers.get(
+            "content-type", src_blob.content_type or "application/octet-stream"
+        )
+    else:
+        content_type = src_blob.content_type or "application/octet-stream"
 
     src_etag = object_etag(src_blob)
     copy_if_match = request.headers.get("x-amz-copy-source-if-match")
@@ -176,6 +222,64 @@ async def copy_object(
             status_code=412, code="PreconditionFailed", resource=resource
         )
 
+    existing = await crud_get_all_blobs(
+        db, BlobFilterParams(path=key, bucket_name=bucket_name)
+    )
+    update = len(existing) > 0
+    previous = existing[0] if update else None
+
+    try:
+        blob = await try_build_cross_bucket_blob_via_forward(
+            src_blob=src_blob,
+            dest_key=key,
+            content_type=content_type,
+            source_chat_id=getattr(source_bucket, "telegram_chat_id", None),
+            dest_chat_id=getattr(dest_bucket, "telegram_chat_id", None),
+            dest_topic_id=getattr(dest_bucket, "telegram_topic_id", None),
+        )
+    except StorageThrottleError:
+        return s3_error_response(status_code=503, code="SlowDown", resource=resource)
+
+    if blob is not None:
+        await crud_create_blob(db, blob, bucket_name, update)
+        cache_delete(bucket_name, key)
+        if previous:
+            from app.s3.object_lifecycle import (
+                bypass_trash_requested,
+                retire_previous_version,
+            )
+
+            await retire_previous_version(
+                db,
+                previous,
+                bucket_name=bucket_name,
+                chat_id=getattr(dest_bucket, "telegram_chat_id", None),
+                bypass_trash=bypass_trash_requested(request),
+            )
+        etag = object_etag(blob)
+        body = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            "<CopyObjectResult>"
+            f"<LastModified>{_fmt_iso(datetime.now(timezone.utc))}</LastModified>"
+            f"<ETag>{escape(etag)}</ETag>"
+            "</CopyObjectResult>"
+        )
+        return Response(content=body, media_type="application/xml", headers={"ETag": etag})
+
+    # Slow path: download-then-upload (not server-side); cap memory like PutObject.
+    src_size = int(getattr(src_blob, "size", 0) or 0)
+    if src_size > MAX_UPLOAD_BYTES:
+        return s3_error_response(
+            status_code=400,
+            code="EntityTooLarge",
+            message=(
+                f"CopyObject loads the source into memory and is limited to "
+                f"{MAX_UPLOAD_BYTES} bytes; use GetObject + PutObject or multipart "
+                f"for larger objects"
+            ),
+            resource=resource,
+        )
+
     try:
         data = await load_blob_bytes(src_blob)
     except Exception:
@@ -186,23 +290,12 @@ async def copy_object(
             resource=f"/{src_bucket}/{src_key}",
         )
 
-    if directive == "REPLACE":
-        content_type = request.headers.get(
-            "content-type", src_blob.content_type or "application/octet-stream"
-        )
-    else:
-        content_type = src_blob.content_type or "application/octet-stream"
-
-    existing = await crud_get_all_blobs(
-        db, BlobFilterParams(path=key, bucket_name=bucket_name)
-    )
-    update = len(existing) > 0
-    previous = existing[0] if update else None
-
     try:
+        sid = new_storage_id() if TG_OPAQUE_FILENAMES else None
+        tg_name = tg_document_label(sid) if sid else key
         put_result = await storage.put_file(
             data,
-            key,
+            tg_name,
             chat_id=getattr(dest_bucket, "telegram_chat_id", None),
             topic_id=getattr(dest_bucket, "telegram_topic_id", None),
         )
@@ -215,6 +308,7 @@ async def copy_object(
 
     blob = BlobInCreate(
         path=key,
+        storage_id=sid,
         file=put_result.file_id,
         content_type=content_type,
         size=len(data),

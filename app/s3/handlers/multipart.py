@@ -10,6 +10,7 @@ from app.core.config import (
     MAX_UPLOAD_BYTES,
     MULTIPART_MAX_PARTS,
     MULTIPART_MIN_PART_BYTES,
+    TG_ALBUM_MAX_ITEMS,
 )
 from app.crud.blob import crud_create_blob, crud_get_all_blobs
 from app.crud.bucket import crud_get_bucket_by_name
@@ -21,7 +22,7 @@ from app.crud.multipart import (
     crud_list_parts,
     crud_upsert_part,
 )
-from app.models.blob import BlobFilterParams, BlobInCreate, BlobPart
+from app.models.blob import BlobFilterParams, BlobInCreate, BlobPart, TelegramAlbumMeta
 from app.s3.auth import (
     AUTH_OK,
     auth_error_response,
@@ -35,6 +36,13 @@ from app.s3.errors import s3_error_response
 from app.storage import storage
 from app.storage.disk_cache import cache_delete
 from app.storage.errors import StorageThrottleError, StorageUnavailableError
+from app.storage.mpu_staging import (
+    read_part,
+    remove_upload_staging,
+    staging_enabled,
+    write_part,
+)
+from app.storage.tg_label import tg_document_label
 
 # Complete XML is small; still cap to avoid abuse.
 _MAX_COMPLETE_XML_BYTES = 256 * 1024
@@ -168,18 +176,22 @@ async def upload_part(
     if not await _upload_owner_ok(upload, bucket, request, db):
         return s3_error_response(status_code=403, code="AccessDenied", resource=resource)
 
-    try:
-        put_result = await storage.put_file(
-            body,
-            f"{key}.part{part_number}",
-            chat_id=getattr(bucket, "telegram_chat_id", None),
-            topic_id=getattr(bucket, "telegram_topic_id", None),
-        )
-    except StorageThrottleError:
-        return s3_error_response(status_code=503, code="SlowDown", resource=resource)
-    except StorageUnavailableError:
+    if not staging_enabled():
         return s3_error_response(
-            status_code=503, code="ServiceUnavailable", resource=resource
+            status_code=503,
+            code="ServiceUnavailable",
+            message="MPU_STAGING_DIR is not configured",
+            resource=resource,
+        )
+
+    try:
+        write_part(upload_id, part_number, body)
+    except Exception:
+        return s3_error_response(
+            status_code=503,
+            code="ServiceUnavailable",
+            message="Failed to stage multipart part",
+            resource=resource,
         )
 
     etag = _etag_for_bytes(body)
@@ -189,17 +201,21 @@ async def upload_part(
         part_number=part_number,
         etag=etag,
         size=len(body),
-        file_id=put_result.file_id,
-        message_id=put_result.message_id,
+        file_id="",
+        message_id=None,
+        staging_path=f"{upload_id}/part-{part_number}",
     )
     if (
         previous
         and previous.get("message_id") is not None
-        and previous["message_id"] != put_result.message_id
     ):
-        await storage.delete_message(
+        from app.ops.tg_delete import safe_delete_tg_message
+
+        await safe_delete_tg_message(
+            db,
             previous["message_id"],
             chat_id=getattr(bucket, "telegram_chat_id", None),
+            reason="multipart_part_replaced",
         )
     return Response(status_code=200, headers={"ETag": etag})
 
@@ -284,16 +300,101 @@ async def complete_multipart_upload(
                 resource=resource,
             )
 
-    parts = [
-        BlobPart(
-            part_number=by_num[num]["part_number"],
-            file_id=by_num[num]["file_id"],
-            size=by_num[num].get("size", 0),
-            message_id=by_num[num].get("message_id"),
-            etag=by_num[num].get("etag", ""),
-        )
-        for num, _ in requested
-    ]
+    sorted_nums = sorted(n for n, _ in requested)
+    storage_id = upload.get("storage_id") or ""
+    telegram_albums: list[TelegramAlbumMeta] | None = None
+    telegram_grouped_id = None
+
+    legacy_tg_parts = any(by_num[n].get("file_id") for n in sorted_nums) and not any(
+        by_num[n].get("staging_path") for n in sorted_nums
+    )
+
+    if legacy_tg_parts:
+        parts = [
+            BlobPart(
+                part_number=by_num[num]["part_number"],
+                file_id=by_num[num]["file_id"],
+                size=by_num[num].get("size", 0),
+                message_id=by_num[num].get("message_id"),
+                etag=by_num[num].get("etag", ""),
+            )
+            for num in sorted_nums
+        ]
+    else:
+        documents: list[tuple[bytes, str]] = []
+        for num in sorted_nums:
+            data = read_part(upload_id, num)
+            documents.append(
+                (data, tg_document_label(storage_id, part_number=num))
+            )
+        built: list[BlobPart] = []
+        albums_meta: list[TelegramAlbumMeta] = []
+        chat_id = getattr(bucket, "telegram_chat_id", None)
+        topic_id = getattr(bucket, "telegram_topic_id", None)
+        album_index = 0
+        # Complete is not fully idempotent: if TG fails after some albums were sent,
+        # staging is kept so the client may Abort and restart; retrying Complete without
+        # Abort may create duplicate TG messages. Partial TG messages are best-effort deleted.
+        from app.ops.tg_delete import safe_delete_tg_message
+
+        async def _rollback_sent_parts(parts_sent: list[BlobPart]) -> None:
+            seen: set[int] = set()
+            for part in parts_sent:
+                mid = part.message_id
+                if mid is None or mid in seen:
+                    continue
+                seen.add(mid)
+                await safe_delete_tg_message(
+                    db,
+                    mid,
+                    chat_id=chat_id,
+                    reason="multipart_complete_rollback",
+                )
+
+        try:
+            for offset in range(0, len(documents), TG_ALBUM_MAX_ITEMS):
+                chunk = documents[offset : offset + TG_ALBUM_MAX_ITEMS]
+                chunk_nums = sorted_nums[offset : offset + TG_ALBUM_MAX_ITEMS]
+                results = await storage.send_media_group(
+                    chunk, chat_id=chat_id, topic_id=topic_id
+                )
+                if len(results) != len(chunk):
+                    raise StorageUnavailableError("incomplete media group response")
+                gid = results[0].grouped_id
+                if telegram_grouped_id is None and gid is not None:
+                    telegram_grouped_id = gid
+                albums_meta.append(
+                    TelegramAlbumMeta(
+                        grouped_id=int(gid or 0),
+                        part_start=chunk_nums[0],
+                        part_end=chunk_nums[-1],
+                    )
+                )
+                for idx, res in enumerate(results):
+                    pn = chunk_nums[idx]
+                    built.append(
+                        BlobPart(
+                            part_number=pn,
+                            file_id=res.file_id,
+                            message_id=res.message_id,
+                            size=int(by_num[pn].get("size", 0)),
+                            etag=by_num[pn].get("etag", ""),
+                            album_index=album_index,
+                        )
+                    )
+                album_index += 1
+        except StorageThrottleError:
+            await _rollback_sent_parts(built)
+            return s3_error_response(status_code=503, code="SlowDown", resource=resource)
+        except StorageUnavailableError:
+            await _rollback_sent_parts(built)
+            return s3_error_response(
+                status_code=503, code="ServiceUnavailable", resource=resource
+            )
+        parts = built
+        telegram_albums = albums_meta
+        remove_upload_staging(upload_id)
+
     total_size = sum(p.size for p in parts)
 
     # Best-effort cleanup of uploaded parts not included in Complete.
@@ -326,6 +427,9 @@ async def complete_multipart_upload(
     update = len(existing) > 0
     blob = BlobInCreate(
         path=key,
+        storage_id=storage_id,
+        telegram_grouped_id=telegram_grouped_id,
+        telegram_albums=telegram_albums,
         file=f"multipart:{upload_id}",
         content_type=upload.get("content_type", "application/octet-stream"),
         size=total_size,
@@ -371,12 +475,17 @@ async def abort_multipart_upload(
         return s3_error_response(status_code=403, code="AccessDenied", resource=resource)
 
     parts = await crud_list_parts(db, upload_id)
+    from app.ops.tg_delete import safe_delete_tg_message
+
     for part in parts:
         if part.get("message_id") is not None:
-            await storage.delete_message(
+            await safe_delete_tg_message(
+                db,
                 part["message_id"],
                 chat_id=getattr(bucket, "telegram_chat_id", None),
+                reason="multipart_abort",
             )
+    remove_upload_staging(upload_id)
     await crud_delete_multipart_upload(db, upload_id)
     return Response(status_code=204)
 

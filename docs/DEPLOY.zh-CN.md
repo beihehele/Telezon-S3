@@ -61,7 +61,7 @@ cp .env.example .env
 Telegram 首次登录需要手机号、验证码、可能还有两步验证密码，**无法**在纯后台 `docker compose up` 里完成。
 
 ```bash
-export IMAGE_TAG=${VERSION:-0.10.10}
+export IMAGE_TAG=${VERSION:-0.11.0}
 docker compose pull
 docker compose --profile setup run --rm setup
 ```
@@ -75,7 +75,7 @@ docker compose --profile setup run --rm setup
 ## 4. 启动
 
 ```bash
-export IMAGE_TAG=${IMAGE_TAG:-0.10.10}
+export IMAGE_TAG=${IMAGE_TAG:-0.11.0}
 docker compose up -d
 ```
 
@@ -93,10 +93,11 @@ command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--w
 
 使用 `INITIAL_ADMIN_*` 登录 REST API，在 `/api/v1/credentials` 创建 Access Key，供 boto3 / AWS CLI 使用。
 
-## 6. 升级与空库（MySQL 8.0，建议 ≥0.10.10）
+## 6. 升级与空库（MySQL 8.0，建议 ≥0.11.0）
 
 | 版本 | 说明 |
 |------|------|
+| **0.11.0** | 匿名 TG 文件名、REST 改名、同桶 Copy 免重传、跨桶 TG 转发、MPU 暂存+相册 Complete、message_id 引用计数。升级需手工 `ALTER TABLE`（见下） |
 | **0.10.9+** | S3 Browser：`GET /{bucket}/?delimiter=...` 列表不再 400 |
 | **0.10.8+** | S3 Browser：列表默认 V2；Pyrogram 话题上传修复 |
 | **0.10.7+** | 修复 `/api/health` 误报 503（数据库已连接但探活仍失败） |
@@ -109,7 +110,7 @@ command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--w
 **推荐升级步骤（个人 NAS、可接受清空元数据）：**
 
 ```bash
-export IMAGE_TAG=0.10.10
+export IMAGE_TAG=0.11.0
 docker compose pull
 docker compose up -d --force-recreate
 ```
@@ -124,6 +125,29 @@ CREATE DATABASE TelezonS3 CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 然后再次 `docker compose up -d`，日志中应出现 `Connected to MySQL`。
 
 **已有数据、不能删库：** 当前版本**不提供**自动迁移脚本；需自行对照 `app/db/tables.py` 手工 `ALTER TABLE`（例如为 `blobs` 增加 `path_digest` 并回填），适合进阶用户。
+
+### 0.11.0 手工加列（在已有库上升级时执行一次）
+
+```sql
+ALTER TABLE blobs ADD COLUMN storage_id VARCHAR(32) NULL;
+ALTER TABLE blobs ADD COLUMN telegram_grouped_id BIGINT NULL;
+ALTER TABLE blobs ADD COLUMN telegram_albums JSON NULL;
+ALTER TABLE trash ADD COLUMN storage_id VARCHAR(32) NULL;
+ALTER TABLE trash ADD COLUMN telegram_grouped_id BIGINT NULL;
+ALTER TABLE trash ADD COLUMN telegram_albums JSON NULL;
+ALTER TABLE multipart_uploads ADD COLUMN storage_id VARCHAR(32) NULL;
+ALTER TABLE multipart_parts ADD COLUMN staging_path VARCHAR(512) NULL;
+```
+
+`.env` 建议（可选，有默认值）：
+
+| 变量 | 默认 | 说明 |
+|------|------|------|
+| `TG_OPAQUE_FILENAMES` | `1` | `0` 时 TG 上传名恢复为 S3 键 |
+| `TG_ALBUM_MAX_ITEMS` | `10` | 每个 Telegram 相册最多 part 数 |
+| `MPU_STAGING_DIR` | `{CACHE_DIR}/mpu-staging` 或系统临时目录 | Multipart UploadPart 落盘路径 |
+
+**跨桶 Copy + 论坛 Topic（已知限制，暂不修）：** 跨桶 Copy 走 TG 转发时，消息会进目标桶的 `telegram_chat_id` 对应群，但**不一定**进入该桶配置的 `telegram_topic_id` 话题；S3 读写正常，仅在 TG 客户端里可能和 Put 上传的文件不在同一话题。详见规格 `docs/superpowers/specs/2026-08-01-opaque-tg-names-and-rename-design.zh-CN.md` §4.2.1。
 
 ## 常见问题
 
