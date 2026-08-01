@@ -89,6 +89,21 @@ async def crud_create_blob(
     return data_blob
 
 
+async def crud_get_blob_in_bucket(
+    db: AsyncSession, bucket_name: str, path: str
+) -> BlobInDb | None:
+    result = await db.execute(
+        select(BlobRow).where(
+            BlobRow.bucket_name == bucket_name,
+            BlobRow.path == path,
+        )
+    )
+    row = result.scalar_one_or_none()
+    if not row:
+        return None
+    return blob_in_db_from_row(row)
+
+
 async def crud_delete_blob(
     db: AsyncSession, bucket_name: str, path: str
 ) -> BlobInDb | None:

@@ -2,7 +2,33 @@
 
 ## Unreleased
 
-_Nothing yet._
+## 0.14.0 — 2026-08-01
+
+Web console (Vue 3) and JWT object REST (0.12–0.14 train). See [`docs/ROADMAP.zh-CN.md`](ROADMAP.zh-CN.md).
+
+### Added
+
+**0.12 API + console**
+- JWT object REST: list, metadata, delete, **batch-delete**, rename; admin **cannot** browse others’ objects.
+- `UserPublic`, `GET /api/v1/shares` (+ admin `?owner=`).
+- `ENABLE_CONSOLE`, Vue 3 + Element Plus SPA (`console/`); Docker multi-stage embeds built SPA in the image.
+
+**0.13 console polish**
+- Multipart upload UI (presigned POST/PUT complete flow).
+- Dark theme toggle, responsive layout shell.
+- Share create dialog + copy public link; file rename; admin user CRUD in console.
+- Console **register** page (`#/register`); `ALLOW_SIGNUP` + `GET /api/auth/config`.
+- CI: console build + Playwright smoke; docs: `docs/DEVELOP.zh-CN.md`, `docs/CONSOLE-VERIFY.zh-CN.md`, `docs/ROADMAP.zh-CN.md`.
+
+**0.14 media**
+- Multipart **Range** reads only required parts (`load_blob_byte_range`).
+- `GET /api/v1/buckets/{b}/objects/{key}/content` (Bearer JWT or short-lived `media_token`; Range).
+- `POST …/content-ticket` issues **media ticket** (default 10 min, `MEDIA_TICKET_MAX_SECONDS`).
+- MP4 `moov` offset probe + disk cache (`app/s3/mp4_index.py`).
+- Presign supports **POST** and extra `query` (MPU).
+
+### Fixed
+- API `HTTPException` handler preserves status codes.
 
 ## 0.11.2 — 2026-08-01
 

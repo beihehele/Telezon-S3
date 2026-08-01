@@ -3,9 +3,9 @@ from datetime import timedelta
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
-from starlette.status import HTTP_400_BAD_REQUEST
+from starlette.status import HTTP_400_BAD_REQUEST, HTTP_403_FORBIDDEN
 
-from app.core.config import logger
+from app.core.config import ALLOW_SIGNUP, logger
 from app.core.token import create_access_token, get_current_user
 from app.crud.bucket import crud_create_bucket
 from app.crud.shortcuts import check_free_bucket_name, check_free_username_and_email
@@ -16,12 +16,24 @@ from app.crud.user import (
 )
 from app.db.session import get_database
 from app.models.bucket import BucketInCreate
+from pydantic import BaseModel
+
 from app.models.token import Token
-from app.models.user import User, UserInCreate
+from app.models.user import User, UserInCreate, UserPublic
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # One week
+
+
+class AuthPublicConfig(BaseModel):
+    allow_signup: bool
+
+
+@router.get("/config", response_model=AuthPublicConfig)
+def auth_public_config():
+    """Console reads this before showing the register link."""
+    return AuthPublicConfig(allow_signup=ALLOW_SIGNUP)
 
 
 @router.post("/login", response_model=Token)
@@ -44,11 +56,16 @@ async def login(
     return {"access_token": token, "token_type": "bearer"}
 
 
-@router.post("/signup", response_model=User)
+@router.post("/signup", response_model=UserPublic)
 async def signup(
     user: UserInCreate = Body(...),
     db: AsyncSession = Depends(get_database),
 ):
+    if not ALLOW_SIGNUP:
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail="Public signup is disabled",
+        )
     await check_free_username_and_email(db, user.username, user.email)
     new_user = await crud_create_user(db, user)
 
@@ -81,11 +98,11 @@ async def signup(
             detail="Signup failed while creating default bucket",
         ) from e
 
-    return new_user
+    return UserPublic.from_user(User(**new_user.model_dump()))
 
 
-@router.get("/current_user", response_model=User)
+@router.get("/current_user", response_model=UserPublic)
 def get_current_user_info(
     current_user: User = Depends(get_current_user),
 ):
-    return current_user
+    return UserPublic.from_user(current_user)

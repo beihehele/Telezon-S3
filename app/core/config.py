@@ -112,6 +112,14 @@ SHARE_LOCKOUT_SECONDS = int(os.getenv("SHARE_LOCKOUT_SECONDS", "900"))
 # When 1, /api/health includes database/telegram error strings (avoid on public URLs).
 HEALTH_EXPOSE_ERRORS = os.getenv("HEALTH_EXPOSE_ERRORS", "0") == "1"
 
+# Web console (Vue SPA under /console/ when built into app/static/console/)
+ENABLE_CONSOLE = os.getenv("ENABLE_CONSOLE", "0") == "1"
+MEDIA_TICKET_MAX_SECONDS = max(
+    60, min(int(os.getenv("MEDIA_TICKET_MAX_SECONDS", "900")), 3600)
+)
+# Public self-service signup (console /api/auth/signup). Set 0 on production NAS.
+ALLOW_SIGNUP = os.getenv("ALLOW_SIGNUP", "1") == "1"
+
 # 0.11 opaque TG names + MPU albums
 TG_OPAQUE_FILENAMES = os.getenv("TG_OPAQUE_FILENAMES", "1") == "1"
 TG_ALBUM_MAX_ITEMS = max(1, min(int(os.getenv("TG_ALBUM_MAX_ITEMS", "10")), 10))

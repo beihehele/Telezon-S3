@@ -8,7 +8,7 @@ Telezon-S3 exposes several overlapping entry points on purpose (S3 clients, scri
 |------------|--------|---------|
 | Access Key ID + Secret Key (SigV4) | User primary key | Full owner access to all owned buckets; CreateBucket |
 | Scoped credentials | `POST /api/v1/credentials` | Extra keys: `readonly` or `readwrite`; optional `buckets` allow-list (empty = all owned buckets) |
-| JWT Bearer (`/api/auth/login`) | `Authorization: Bearer <jwt>` | Management REST: users, buckets metadata, shares, credentials, presign helper |
+| JWT Bearer (`/api/auth/login`) | `Authorization: Bearer <jwt>` | Management REST: users, buckets metadata, shares, credentials, presign helper, **web console object APIs** (see below) |
 | `Authorization: Bearer access_key:secret_key` | `PUT /api/v1/upload/` only | Simple script/Shortcuts upload **without** SigV4 |
 
 S3 operations authenticate via SigV4. **Readonly** credentials may List/Get/Head; writes require **readwrite** or the primary owner key. Bucket-scoped keys apply to **every** bucket touched by the request (including CopyObject source and destination).
@@ -31,6 +31,24 @@ S3 operations authenticate via SigV4. **Readonly** credentials may List/Get/Head
 | **Public bucket** (`is_public=true`) | Anonymous **Get/Head** on objects | Set via `PUT /api/v1/buckets/{name}` as owner; List and other bucket APIs still require SigV4. Does not make the bucket writable anonymously. |
 
 Rule of thumb: **programs → Presign**; **one file to a person → Share**; **anonymous object GET/HEAD → Public** (not anonymous listing).
+
+## Web console (`ENABLE_CONSOLE=1`)
+
+Browser UI at `/console/` (Vue SPA). Same **JWT** as other management REST; **not** SigV4.
+
+| Need | API | Auth |
+|------|-----|------|
+| List / metadata / delete / batch-delete / rename | `/api/v1/buckets/{bucket}/objects…` | Bearer; **bucket owner only** (admin cannot list another user’s objects) |
+| Inline preview / download in browser | `GET …/objects/{key}/content` | Bearer **or** short-lived `media_token` query param |
+| Issue `media_token` for `<video>` Range | `POST …/objects/{key}/content-ticket` | Bearer (owner) |
+| Upload in UI | Presigned PUT/POST via `POST /api/v1/presign` | Bearer |
+| Self-service register | `POST /api/auth/signup` | Public only if `ALLOW_SIGNUP=1` (`GET /api/auth/config`) |
+
+**Media ticket:** JWT `sub=media_content`, bound to bucket+key; default TTL `MEDIA_TICKET_MAX_SECONDS`. Do not share URLs containing `media_token`. SSE-C objects cannot use content ticket or content proxy.
+
+**Large files:** Prefer presigned GET for download; content proxy without `Range` may buffer the whole object in memory.
+
+Deploy / acceptance: [`DEPLOY.zh-CN.md`](DEPLOY.zh-CN.md), [`CONSOLE-VERIFY.zh-CN.md`](CONSOLE-VERIFY.zh-CN.md).
 
 ## Buckets
 

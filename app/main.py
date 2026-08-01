@@ -1,15 +1,18 @@
 # pylint: disable=redefined-outer-name,unused-argument
 from contextlib import asynccontextmanager
 
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.exceptions import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from starlette.status import HTTP_422_UNPROCESSABLE_ENTITY
 
 from app.bot.mgmt import start_mgmt_bot_if_enabled, stop_mgmt_bot
 from app.api import router as api_router
 from app.api.v1.endpoints.shares import share_public_router
-from app.core.config import CID, PROJECT_NAME, logger
+from app.core.config import CID, ENABLE_CONSOLE, PROJECT_NAME, logger
 from app.core.errors import http_422_error_handler, http_error_handler
 from app.db.session import close_database_connection, connect_to_database
 from app.ops.gc import start_gc_if_enabled, stop_gc
@@ -79,3 +82,17 @@ app.add_exception_handler(HTTP_422_UNPROCESSABLE_ENTITY, http_422_error_handler)
 app.include_router(api_router)
 app.include_router(share_public_router)
 app.include_router(s3_router)
+
+if ENABLE_CONSOLE:
+    _console_dir = Path(__file__).resolve().parent / "static" / "console"
+    if _console_dir.is_dir():
+        app.mount(
+            "/console",
+            StaticFiles(directory=str(_console_dir), html=True),
+            name="console",
+        )
+    else:
+        logger.warning(
+            "ENABLE_CONSOLE=1 but %s is missing; build the SPA into app/static/console/",
+            _console_dir,
+        )

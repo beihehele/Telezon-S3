@@ -8,6 +8,8 @@ Telezon S3 是一套兼容 **Amazon S3 API** 的对象存储服务，底层使�
 - **REST：** 用户、桶、多凭证 RBAC、分享、回收站、Bearer 直传（详见 [`docs/AUTH-AND-SHARING.md`](docs/AUTH-AND-SHARING.md)）
 - **运维：** 限流、可选磁盘缓存、后台 GC、软删除/回收站
 
+本地开发与全量 pytest（与 CI 一致）：[`docs/DEVELOP.zh-CN.md`](docs/DEVELOP.zh-CN.md)。路线图：[`docs/ROADMAP.zh-CN.md`](docs/ROADMAP.zh-CN.md)。
+
 [![Release](https://img.shields.io/github/v/release/beihehele/Telezon-S3)](https://github.com/beihehele/Telezon-S3/releases)
 
 > 每个 Telegram 账号仅运行 **单 worker**，勿在多进程间共用同一条 `SESSION_STRING`。

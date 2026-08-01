@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from starlette.responses import Response
 from starlette.status import HTTP_403_FORBIDDEN, HTTP_404_NOT_FOUND
 
@@ -13,6 +13,7 @@ from app.crud.share import (
     crud_create_share,
     crud_delete_share,
     crud_get_share,
+    crud_list_shares,
     crud_release_share_download,
     share_is_usable,
     share_password_ok,
@@ -29,6 +30,37 @@ from app.models.user import User
 from app.s3.blob_io import load_blob_bytes, safe_content_disposition
 
 router = APIRouter(prefix="/shares", tags=["Shares"])
+
+
+def _share_public(share) -> SharePublic:
+    return SharePublic(
+        token=share.token,
+        bucket=share.bucket,
+        key=share.key,
+        expires_at=share.expires_at,
+        max_downloads=share.max_downloads,
+        download_count=share.download_count,
+        has_password=bool(share.password_hash),
+    )
+
+
+@router.get("/", response_model=list[SharePublic])
+async def list_shares(
+    owner: str | None = Query(None, description="Admin only: filter by owner username"),
+    db: AsyncSession = Depends(get_database),
+    current_user: User = Depends(get_current_user),
+):
+    if is_admin(current_user):
+        owner_filter = owner
+    else:
+        if owner and owner != current_user.username:
+            raise HTTPException(
+                status_code=HTTP_403_FORBIDDEN,
+                detail="Cannot list another user's shares",
+            )
+        owner_filter = current_user.username
+    shares = await crud_list_shares(db, owner_username=owner_filter)
+    return [_share_public(s) for s in shares]
 
 
 @router.post("/", response_model=SharePublic)
@@ -67,15 +99,7 @@ async def create_share(
         )
 
     share = await crud_create_share(db, payload, current_user.username)
-    return SharePublic(
-        token=share.token,
-        bucket=share.bucket,
-        key=share.key,
-        expires_at=share.expires_at,
-        max_downloads=share.max_downloads,
-        download_count=share.download_count,
-        has_password=bool(share.password_hash),
-    )
+    return _share_public(share)
 
 
 @router.delete("/{token}")

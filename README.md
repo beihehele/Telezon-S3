@@ -8,7 +8,7 @@ Telezon S3 is an **Amazon S3–compatible** object storage service that uses **T
 - REST: users, buckets, credentials (RBAC), shares, trash, Bearer upload
 - Ops: rate limits, optional disk cache, background GC, soft delete / trash
 
-Further detail: [`docs/S3-COMPAT.md`](docs/S3-COMPAT.md), [`docs/AUTH-AND-SHARING.md`](docs/AUTH-AND-SHARING.md). Step-by-step deploy (Chinese): [`docs/DEPLOY.zh-CN.md`](docs/DEPLOY.zh-CN.md).
+Further detail: [`docs/S3-COMPAT.md`](docs/S3-COMPAT.md), [`docs/AUTH-AND-SHARING.md`](docs/AUTH-AND-SHARING.md). Step-by-step deploy (Chinese): [`docs/DEPLOY.zh-CN.md`](docs/DEPLOY.zh-CN.md). Local dev and pytest: [`docs/DEVELOP.zh-CN.md`](docs/DEVELOP.zh-CN.md).
 
 [![Release](https://img.shields.io/github/v/release/beihehele/Telezon-S3)](https://github.com/beihehele/Telezon-S3/releases)
 

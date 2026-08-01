@@ -30,10 +30,11 @@ def create_presigned_url(
     expires_in: int = 3600,
     region: str = "us-east-1",
     scheme: str = "http",
+    extra_query: dict[str, str] | None = None,
 ) -> str:
     method = method.upper()
-    if method not in {"GET", "PUT"}:
-        raise ValueError("Only GET and PUT presigned URLs are supported")
+    if method not in {"GET", "PUT", "POST"}:
+        raise ValueError("Only GET, PUT, and POST presigned URLs are supported")
 
     expires_in = max(1, min(int(expires_in), 604800))
     now = datetime.now(timezone.utc)
@@ -52,6 +53,10 @@ def create_presigned_url(
         "X-Amz-Expires": str(expires_in),
         "X-Amz-SignedHeaders": "host",
     }
+    if extra_query:
+        for k, v in extra_query.items():
+            if k and v is not None:
+                query[str(k)] = str(v)
     canonical_querystring = urlencode(sorted(query.items()), quote_via=quote)
 
     canonical_headers = f"host:{host}\n"

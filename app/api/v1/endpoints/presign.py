@@ -22,6 +22,7 @@ class PresignRequest(BaseModel):
     key: str
     method: str = "GET"
     expires_in: int = Field(default=3600, ge=1, le=604800)
+    query: dict[str, str] = Field(default_factory=dict)
 
 
 class PresignResponse(BaseModel):
@@ -38,8 +39,8 @@ async def create_presign(
     current_user: User = Depends(get_current_user),
 ):
     method = payload.method.upper()
-    if method not in {"GET", "PUT"}:
-        raise HTTPException(status_code=400, detail="method must be GET or PUT")
+    if method not in {"GET", "PUT", "POST"}:
+        raise HTTPException(status_code=400, detail="method must be GET, PUT, or POST")
 
     bucket = await crud_get_bucket_by_name(db, payload.bucket)
     if not bucket:
@@ -70,5 +71,6 @@ async def create_presign(
         host=host,
         expires_in=payload.expires_in,
         scheme=scheme,
+        extra_query=payload.query or None,
     )
     return PresignResponse(url=url, expires_in=payload.expires_in, method=method)

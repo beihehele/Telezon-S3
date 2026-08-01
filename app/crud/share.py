@@ -65,6 +65,20 @@ async def crud_get_share(db: AsyncSession, token: str) -> Share | None:
     return share_from_row(row)
 
 
+async def crud_list_shares(
+    db: AsyncSession,
+    *,
+    owner_username: str | None = None,
+    limit: int = 200,
+    offset: int = 0,
+) -> list[Share]:
+    stmt = select(ShareRow).order_by(ShareRow.created_at.desc()).offset(offset).limit(limit)
+    if owner_username:
+        stmt = stmt.where(ShareRow.owner_username == owner_username)
+    result = await db.execute(stmt)
+    return [share_from_row(row) for row in result.scalars().all()]
+
+
 async def crud_delete_share(db: AsyncSession, token: str) -> bool:
     row = await db.get(ShareRow, token)
     if not row:

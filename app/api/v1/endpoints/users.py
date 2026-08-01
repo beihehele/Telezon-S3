@@ -18,12 +18,12 @@ from app.crud.user import (
 )
 from app.db.session import get_database
 from app.models.bucket import BucketInCreate
-from app.models.user import User, UserFilterParams, UserInCreate, UserInUpdate
+from app.models.user import User, UserFilterParams, UserInCreate, UserInUpdate, UserPublic
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
 
-@router.get("/", response_model=List[User])
+@router.get("/", response_model=List[UserPublic])
 async def get_all_users(
     username: str = "",
     email: str = "",
@@ -38,10 +38,10 @@ async def get_all_users(
     )
 
     users = await crud_get_all_users(db, filters)
-    return users
+    return [UserPublic.from_user(u) for u in users]
 
 
-@router.get("/{username}", response_model=User)
+@router.get("/{username}", response_model=UserPublic)
 async def get_user(
     username: str,
     db: AsyncSession = Depends(get_database),
@@ -56,10 +56,10 @@ async def get_user(
             detail=f"Username {username} not found",
         )
 
-    return user
+    return UserPublic.from_user(user)
 
 
-@router.post("/", response_model=User)
+@router.post("/", response_model=UserPublic)
 async def create_user(
     user: UserInCreate = Body(...),
     db: AsyncSession = Depends(get_database),
@@ -93,10 +93,10 @@ async def create_user(
             detail="User create failed while creating default bucket",
         ) from exc
 
-    return new_user
+    return UserPublic.from_user(new_user)
 
 
-@router.put("/{username}", response_model=User)
+@router.put("/{username}", response_model=UserPublic)
 async def update_user(
     username: str,
     user: UserInUpdate = Body(...),
@@ -108,7 +108,7 @@ async def update_user(
 
     response_user = await crud_update_user(db, username, user)
 
-    return response_user
+    return UserPublic.from_user(response_user)
 
 
 @router.delete("/{username}")

@@ -76,6 +76,7 @@ async def test_multipart_create_upload_part_complete(mock_db, fake_storage, monk
     monkeypatch.setattr("app.s3.handlers.object.precheck_request_for_bucket", fake_verify)
     monkeypatch.setattr("app.s3.handlers.object.crud_get_all_blobs", fake_get_all)
     monkeypatch.setattr("app.s3.handlers.object.storage", fake_storage)
+    monkeypatch.setattr("app.s3.blob_io.storage", fake_storage)
 
     # Multipart metadata in SQL tables (see crud_multipart).
     async def override_db():

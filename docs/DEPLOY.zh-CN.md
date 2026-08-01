@@ -154,6 +154,20 @@ ALTER TABLE multipart_parts ADD COLUMN staging_path VARCHAR(512) NULL;
 
 **跨桶 Copy + 论坛 Topic（已知限制，暂不修）：** 跨桶 Copy 走 TG 转发时，消息会进目标桶的 `telegram_chat_id` 对应群，但**不一定**进入该桶配置的 `telegram_topic_id` 话题；S3 读写正常，仅在 TG 客户端里可能和 Put 上传的文件不在同一话题。详见规格 `docs/superpowers/specs/2026-08-01-opaque-tg-names-and-rename-design.zh-CN.md` §4.2.1。
 
+### Web 控制台（0.12+）
+
+| 项 | 说明 |
+|----|------|
+| `ENABLE_CONSOLE` | `1` 时挂载 `/console/`（Release 镜像内已含构建好的 SPA） |
+| `ALLOW_SIGNUP` | `1` 开放控制台自助注册（`/api/auth/signup`）；公网 NAS 建议 `0`，仅管理员建号 |
+| `PUBLIC_BASE_URL` | 浏览器可访问的 URL（预签名 Host） |
+| 访问 | `https://<域名>/console/#/login` |
+| 开发 | `console/` 目录 `npm install && npm run dev`；发布静态资源：`npm run build:app` |
+
+视频预览：`POST …/content-ticket` 领取短期 **media_token**，再 `GET …/content?media_token=…`（支持 Range）。**勿分享含 token 的 URL**；登录 JWT 仅用于 API `Authorization`。
+
+**发布前验收：** [`docs/CONSOLE-VERIFY.zh-CN.md`](CONSOLE-VERIFY.zh-CN.md)
+
 ## 常见问题
 
 - **`database.ok: false`**：检查 `DATABASE_URL` / `MYSQL_*`、网络与账号权限；可设 `HEALTH_EXPOSE_ERRORS=1` 查看 `database.error`。在容器内测试：`python -c "import socket; socket.create_connection(('你的MYSQL_HOST',3306),5)"`。

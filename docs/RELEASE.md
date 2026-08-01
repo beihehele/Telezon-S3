@@ -17,7 +17,7 @@ Tags must match `v*` (e.g. `v0.9.0`, `v1.0.0`, `v1.2.3-rc.1`). Prerelease tags c
 |----------|------|--------|
 | Build Release | `.github/workflows/build-release.yml` | GitHub Release + source archives + `.env.example` + `docker-compose.yml` + setup scripts + `README.zh-CN.md` + `docs/DEPLOY.zh-CN.md`; notes via `changelogithub` |
 | Build and Publish Docker Image | `.github/workflows/build-docker.yml` | `ghcr.io/beihehele/telezon-s3` **linux/amd64** + **linux/arm64**; tags: `latest`, `x.y.z`, `x.y`, `sha-<short>` |
-| CI | `.github/workflows/ci.yml` | pytest on push/PR (does not publish) |
+| CI | `.github/workflows/ci.yml` | console build + Playwright smoke + pytest on push/PR (does not publish) |
 | Poetry lock | `.github/workflows/poetry-lock.yml` | Regenerate `poetry.lock` (manual `workflow_dispatch` or on `pyproject.toml` / `poetry.lock` push); download artifact if lock was stale |
 
 After changing `pyproject.toml`, run **Poetry lock** workflow on GitHub (or `poetry lock && make export` on Linux/macOS), commit `poetry.lock`, and run `make export` if you use hashed `requirements.txt` locally.
@@ -50,6 +50,8 @@ docker compose up -d
 ```
 
 See [DEPLOY.zh-CN.md](DEPLOY.zh-CN.md) for the full Compose guide.
+
+Local development and **full pytest** (same env as CI): [DEVELOP.zh-CN.md](DEVELOP.zh-CN.md).
 
 Or pull only:
 

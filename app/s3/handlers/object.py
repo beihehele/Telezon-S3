@@ -19,6 +19,7 @@ from app.s3.auth import (
 from app.s3 import stream_upload
 from app.s3.body import BodyTooLarge, reject_oversized_content_length, stream_body_to_file
 from app.s3.stream_upload import SHA_MISMATCH
+from app.storage import storage
 from app.storage.put_staging import new_put_staging_file
 from app.s3.errors import s3_error_response
 from app.s3.list_query import looks_like_list_objects
@@ -33,7 +34,7 @@ from app.s3.http_range import (
 from app.s3.sse import SseError, decrypt_sse_c, encrypt_sse_c, sse_key_md5_b64
 from app.s3.subresources import reject_unsupported_subresource
 from app.s3.xml import object_etag
-from app.storage import storage
+from app.s3.blob_io import load_blob_byte_range, load_blob_bytes
 from app.storage.disk_cache import cache_delete, cache_get, cache_put
 from app.storage.tg_context import (
     blob_telegram_chat_id,
@@ -108,28 +109,26 @@ async def _load_object_bytes(
     key: str,
     sse_key: str | None,
     telegram_chat_id: str | None = None,
+    byte_range: tuple[int, int] | None = None,
 ):
+    if byte_range is not None and blob.parts:
+        start, end = byte_range
+        data = await load_blob_byte_range(blob, start, end, sse_key=sse_key)
+        return data, bool(blob.encrypted)
+
     cached = None if blob.encrypted or blob.parts else cache_get(bucket_name, key)
     if cached is not None:
+        if byte_range is not None:
+            start, end = byte_range
+            return cached[start : end + 1], False
         return cached, False
 
     if blob.parts:
-        chunks: list[bytes] = []
-        chat_id = telegram_chat_id or blob_telegram_chat_id(blob)
-        for part in blob.parts:
-            cid, mid = part_telegram_context(blob, part)
-            if cid is None:
-                cid = chat_id
-            file_obj = await storage.get_file(
-                part.file_id, chat_id=cid, message_id=mid
-            )
-            data = file_obj.read() if hasattr(file_obj, "read") else file_obj
-            if isinstance(data, memoryview):
-                data = data.tobytes()
-            if isinstance(data, str):
-                data = data.encode()
-            chunks.append(data)
-        return b"".join(chunks), False
+        data = await load_blob_bytes(blob, sse_key=sse_key)
+        if byte_range is not None:
+            start, end = byte_range
+            return data[start : end + 1], False
+        return data, False
 
     cid, mid = single_telegram_context(blob)
     if cid is None:
@@ -152,6 +151,9 @@ async def _load_object_bytes(
         return data, True
 
     cache_put(bucket_name, key, data)
+    if byte_range is not None:
+        start, end = byte_range
+        return data[start : end + 1], False
     return data, False
 
 
@@ -429,6 +431,21 @@ async def get_object(
             resource=resource,
         )
 
+    total_size = int(blob.size or 0)
+    range_header = request.headers.get("range")
+    byte_range: tuple[int, int] | None = None
+    if range_header:
+        try:
+            byte_range = parse_bytes_range(range_header, max(total_size, 1))
+        except InvalidRange:
+            return Response(
+                status_code=416,
+                headers={
+                    "Content-Range": f"bytes */{total_size}",
+                    "Accept-Ranges": "bytes",
+                },
+            )
+
     try:
         data, was_encrypted = await _load_object_bytes(
             blob,
@@ -438,6 +455,7 @@ async def get_object(
             telegram_chat_id=resolve_telegram_chat_id(
                 getattr(bucket, "telegram_chat_id", None)
             ),
+            byte_range=byte_range,
         )
     except StorageThrottleError:
         return _slow_down(resource)
@@ -464,7 +482,7 @@ async def get_object(
             pass
 
     range_header = request.headers.get("range")
-    if range_header:
+    if range_header and byte_range is None:
         try:
             bounds = parse_bytes_range(range_header, len(data))
         except InvalidRange:
@@ -486,6 +504,17 @@ async def get_object(
                 media_type=blob.content_type or "application/octet-stream",
                 headers=headers,
             )
+    elif range_header and byte_range is not None:
+        start, end = byte_range
+        chunk = data if len(data) == (end - start + 1) else data[start : end + 1]
+        headers["Content-Length"] = str(len(chunk))
+        headers["Content-Range"] = f"bytes {start}-{end}/{total_size}"
+        return Response(
+            content=chunk,
+            status_code=206,
+            media_type=blob.content_type or "application/octet-stream",
+            headers=headers,
+        )
 
     return Response(
         content=data,

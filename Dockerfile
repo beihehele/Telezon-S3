@@ -1,3 +1,10 @@
+FROM node:20-alpine AS console-build
+WORKDIR /console
+COPY console/package.json console/package-lock.json* ./
+RUN npm ci
+COPY console/ ./
+RUN npm run build
+
 FROM python:3.12-alpine
 
 ARG VERSION=dev
@@ -32,6 +39,7 @@ RUN pip install --no-cache-dir poetry poetry-plugin-export \
     && pip install --no-cache-dir "cryptography>=44.0.0" "socksio>=1.0.0" "httpx[socks]>=0.27.0"
 
 COPY . .
+COPY --from=console-build /console/dist /app/app/static/console
 
 EXPOSE 8000
 

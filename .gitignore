@@ -14,3 +14,5 @@ scripts/build-exe.ps1
 scripts/test-exe.ps1
 *.session
 *.pdf
+# Console SPA build output (built in Docker / `npm run build:app` locally)
+app/static/console/

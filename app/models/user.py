@@ -41,6 +41,20 @@ class User(UserBase, DateTimeModelMixin):
     pass
 
 
+class UserPublic(DateTimeModelMixin):
+    """JWT/console API user view (no secret_key)."""
+
+    username: str
+    email: EmailStr
+    description: Optional[str] = ""
+    role: str = USER_ROLE
+    access_key_id: str = ""
+
+    @classmethod
+    def from_user(cls, user: User) -> "UserPublic":
+        return cls(**user.model_dump(exclude={"secret_key"}))
+
+
 class UserInLogin(BaseModel):
     username: str
     password: str
