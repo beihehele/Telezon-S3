@@ -97,6 +97,7 @@ command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--w
 
 | 版本 | 说明 |
 |------|------|
+| **0.14.0** | 在 **0.11.2+** 之上：**无新增 MySQL 迁移**；镜像内嵌 Web 控制台；可选 `.env` 见下文「从 0.11.2 升级到 0.14.0」 |
 | **0.11.1+** | 修复 `FILE_REFERENCE_EXPIRED`：下载需 `message_id` + 桶 `telegram_chat_id`（或全局 `CID`） |
 | **0.11.0** | 匿名 TG 文件名、REST 改名、同桶 Copy 免重传、跨桶 TG 转发、MPU 暂存+相册 Complete、message_id 引用计数。升级需手工 `ALTER TABLE`（见下） |
 | **0.10.9+** | S3 Browser：`GET /{bucket}/?delimiter=...` 列表不再 400 |
@@ -111,12 +112,58 @@ command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--w
 **推荐升级步骤（个人 NAS、可接受清空元数据）：**
 
 ```bash
-export IMAGE_TAG=0.11.1
+export IMAGE_TAG=0.14.0
 docker compose pull
 docker compose up -d --force-recreate
 ```
 
-若日志里仍是 **建表失败**，在 MySQL 上清空应用库后重启（**会删除所有桶/对象元数据**，Telegram 上的文件消息不会自动删）：
+### 从 0.11.2 升级到 0.14.0（保留现有库与对象）
+
+适用于已在 **0.11.2**（或 0.11.x 且已跑过 0.11.0 加列）的部署。**不需要**删库、**不需要**新的 `ALTER TABLE`。
+
+1. **拉镜像并重启**
+
+   ```bash
+   export IMAGE_TAG=0.14.0
+   docker compose pull
+   docker compose up -d --force-recreate
+   ```
+
+2. **核对 `.env`（在 `.env.example` 中新增项，旧部署可保持默认）**
+
+   | 变量 | 建议 | 说明 |
+   |------|------|------|
+   | `ENABLE_CONSOLE` | `0` 或 `1` | `1` 开启浏览器控制台 `/console/`（镜像已含 SPA） |
+   | `ALLOW_SIGNUP` | 内网 `1` / 公网 `0` | 是否开放 `#/register` 自助注册 |
+   | `MEDIA_TICKET_MAX_SECONDS` | `900`（可选） | 控制台视频预览 ticket 有效期 |
+   | `PUBLIC_BASE_URL` | 用控制台或 presign 时必填 | 浏览器可访问的根 URL，无尾斜杠 |
+
+   其余（`SECRET_KEY`、`SESSION_STRING`、`MYSQL_*`、`CACHE_DIR`、MPU 相关）与 0.11.2 **相同**。
+
+3. **行为变化（S3 客户端）**
+
+   - **兼容**：Put/Get/List/MPU、回收站、分享、SigV4 等用法不变。
+   - **改进**：已 Complete 的 **分片对象** 按 Range 读取时，只拉需要的 part（省 TG 流量、利于拖动进度条）。
+   - **新增（可选）**：JWT 对象 REST、content 代理、media ticket——主要给 **控制台**；纯 S3 工具可忽略。
+
+4. **启用控制台时**
+
+   - 访问 `https://<域名>/console/#/login`，用原有 REST 账号登录（与 `INITIAL_ADMIN_*` 或已建用户相同）。
+   - 验收清单：[`docs/CONSOLE-VERIFY.zh-CN.md`](CONSOLE-VERIFY.zh-CN.md)
+
+5. **回滚**
+
+   ```bash
+   export IMAGE_TAG=0.11.2
+   docker compose pull
+   docker compose up -d --force-recreate
+   ```
+
+   0.14 未改表结构；回滚后控制台相关 `.env` 可关掉，数据仍在 MySQL / TG。
+
+**功能清单与版本合订说明：** [`CHANGELOG.md`](../CHANGELOG.md) 的 **0.14.0**；路线图：[`docs/ROADMAP.zh-CN.md`](ROADMAP.zh-CN.md)。
+
+若日志里仍是 **建表失败**（多见于从很老版本升级），在 MySQL 上清空应用库后重启（**会删除所有桶/对象元数据**，Telegram 上的文件消息不会自动删）：
 
 ```sql
 DROP DATABASE TelezonS3;
@@ -170,6 +217,7 @@ ALTER TABLE multipart_parts ADD COLUMN staging_path VARCHAR(512) NULL;
 
 ## 常见问题
 
+- **控制台打开成 S3 `NoSuchBucket`，Resource 为 `/console`**：请求被 S3 列表路由当成桶名 `console`。请设 `ENABLE_CONSOLE=1`，并使用 **≥0.14.1** 镜像（0.14.0 控制台挂载在 S3 之后，会触发此问题）。正确地址：`http://<host>:<port>/console/#/login` 或 `…/console/`。
 - **`database.ok: false`**：检查 `DATABASE_URL` / `MYSQL_*`、网络与账号权限；可设 `HEALTH_EXPOSE_ERRORS=1` 查看 `database.error`。在容器内测试：`python -c "import socket; socket.create_connection(('你的MYSQL_HOST',3306),5)"`。
 - **建表报错 1101 / 1170 / 1071**：请使用 **0.10.4+** 镜像并对空库执行 `create_all`（见「升级与空库」）。1071 多为 `path(768)` 索引；0.10.4 改为 `path(512)`。
 - **启动报 InvalidToken / 未配 BOT_TOKEN**：账户模式请用 **0.10.5+**，并删除 `.env` 中空 `BOT_TOKEN=`。

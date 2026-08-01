@@ -2,9 +2,19 @@
 
 ## Unreleased
 
+## 0.14.1 — 2026-08-01
+
+### Fixed
+
+- **Web console:** mount `/console` before S3 `/{bucket_name}` routes so the SPA is not treated as bucket `console`; redirect `/console` → `/console/`.
+
+### Docs
+
+- Upgrade guide **0.11.2 → 0.14.0** and FAQ for `NoSuchBucket` on `/console` ([`docs/DEPLOY.zh-CN.md`](DEPLOY.zh-CN.md)).
+
 ## 0.14.0 — 2026-08-01
 
-Web console (Vue 3) and JWT object REST (0.12–0.14 train). See [`docs/ROADMAP.zh-CN.md`](ROADMAP.zh-CN.md).
+Web console (Vue 3) and JWT object REST (0.12–0.14 train). See [`docs/ROADMAP.zh-CN.md`](ROADMAP.zh-CN.md). **Upgrade from 0.11.2:** [`docs/DEPLOY.zh-CN.md`](DEPLOY.zh-CN.md) §「从 0.11.2 升级到 0.14.0」.
 
 ### Added
 

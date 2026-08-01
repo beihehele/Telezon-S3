@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.exceptions import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.responses import RedirectResponse
 from starlette.status import HTTP_422_UNPROCESSABLE_ENTITY
 
 from app.bot.mgmt import start_mgmt_bot_if_enabled, stop_mgmt_bot
@@ -81,11 +82,15 @@ app.add_exception_handler(HTTP_422_UNPROCESSABLE_ENTITY, http_422_error_handler)
 # Fixed-path routers before S3 catch-alls (/{bucket}/{key}).
 app.include_router(api_router)
 app.include_router(share_public_router)
-app.include_router(s3_router)
 
 if ENABLE_CONSOLE:
     _console_dir = Path(__file__).resolve().parent / "static" / "console"
     if _console_dir.is_dir():
+
+        @app.get("/console", include_in_schema=False)
+        async def console_redirect():
+            return RedirectResponse(url="/console/", status_code=307)
+
         app.mount(
             "/console",
             StaticFiles(directory=str(_console_dir), html=True),
@@ -96,3 +101,5 @@ if ENABLE_CONSOLE:
             "ENABLE_CONSOLE=1 but %s is missing; build the SPA into app/static/console/",
             _console_dir,
         )
+
+app.include_router(s3_router)
