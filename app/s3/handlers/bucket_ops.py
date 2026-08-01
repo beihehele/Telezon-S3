@@ -26,6 +26,7 @@ router = APIRouter(tags=["S3"])
 
 
 @router.head("/{bucket_name}")
+@router.head("/{bucket_name}/")
 async def head_bucket(
     request: Request,
     bucket_name: str,

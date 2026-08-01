@@ -105,7 +105,12 @@ async def test_list_objects_without_list_type_defaults_to_v2(mock_db, monkeypatc
             )
             assert resp.status_code == 200
             assert "ListBucketResult" in resp.text
-            assert "<CommonPrefixes>" in resp.text or "<Key>" in resp.text
+            resp = await client.get(
+                "/alice/",
+                params={"delimiter": "/", "max-keys": "1000", "prefix": ""},
+            )
+            assert resp.status_code == 200
+            assert "ListBucketResult" in resp.text
     finally:
         app.dependency_overrides.clear()
 

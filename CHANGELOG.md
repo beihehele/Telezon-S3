@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.10.9 — 2026-08-01
+
+### Fixes (S3 Browser)
+- List bucket on `GET /{bucket}/?delimiter=...` (trailing slash): route to ListObjectsV2 instead of empty-key GetObject 400.
+
 ## 0.10.8 — 2026-08-01
 
 ### Fixes (S3 clients)

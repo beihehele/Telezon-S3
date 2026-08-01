@@ -18,6 +18,7 @@ from app.s3.auth import (
 )
 from app.s3.body import BodyTooLarge, read_body_capped, reject_oversized_content_length
 from app.s3.errors import s3_error_response
+from app.s3.handlers.list_objects import _looks_like_list_objects, list_objects
 from app.s3.handlers import multipart as multipart_handlers
 from app.s3.handlers import copy_object as copy_handlers
 from app.s3.http_range import (
@@ -300,6 +301,8 @@ async def get_object(
     db: AsyncSession = Depends(get_database),
 ):
     if not key:
+        if _looks_like_list_objects(request):
+            return await list_objects(request, bucket_name, db)
         return _empty_key_error(bucket_name)
 
     resource = f"/{bucket_name}/{key}"
