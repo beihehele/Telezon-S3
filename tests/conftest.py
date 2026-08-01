@@ -108,7 +108,13 @@ class FakeStorage:
             )
         return out
 
-    async def get_file(self, file_id: str):
+    async def get_file(
+        self,
+        file_id: str,
+        *,
+        chat_id: str | None = None,
+        message_id: int | None = None,
+    ):
         return io.BytesIO(self.files[file_id])
 
     async def delete_message(self, message_id: int, **kwargs) -> bool:

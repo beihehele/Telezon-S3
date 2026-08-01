@@ -26,6 +26,7 @@ from app.db import session as db_session
 from app.ops.tg_delete import retry_pending_tg_deletes
 from app.s3.object_lifecycle import purge_trash_item
 from app.storage import storage
+from app.storage.tg_context import resolve_telegram_chat_id
 from app.storage.errors import (
     StorageObjectGoneError,
     StorageThrottleError,
@@ -51,7 +52,10 @@ _GONE_MARKERS = (
 
 
 def _is_transient_probe_error(exc: BaseException) -> bool:
-    return isinstance(exc, (StorageThrottleError, StorageUnavailableError))
+    if isinstance(exc, (StorageThrottleError, StorageUnavailableError)):
+        return True
+    text = str(exc).lower()
+    return "file_reference_expired" in text or "file reference" in text
 
 
 def _is_confirmed_object_gone(exc: BaseException) -> bool:
@@ -73,15 +77,21 @@ async def _sample_dead_blobs(session) -> int:
         path = blob.path
         if not bucket_name or not path:
             continue
+        bucket = await crud_get_bucket_by_name(session, bucket_name)
+        raw_chat = getattr(bucket, "telegram_chat_id", None) if bucket else None
+        chat_id = resolve_telegram_chat_id(raw_chat)
         try:
             if parts:
                 first = parts[0]
                 fid = first.file_id if hasattr(first, "file_id") else None
                 if not fid:
                     continue
-                await storage.get_file(fid)
+                mid = getattr(first, "message_id", None)
+                await storage.get_file(fid, chat_id=chat_id, message_id=mid)
             elif file_id and not str(file_id).startswith("multipart:"):
-                await storage.get_file(file_id)
+                await storage.get_file(
+                    file_id, chat_id=chat_id, message_id=blob.message_id
+                )
             else:
                 continue
         except Exception as exc:

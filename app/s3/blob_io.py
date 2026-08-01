@@ -5,6 +5,7 @@ from urllib.parse import quote
 from app.models.blob import Blob
 from app.s3.sse import decrypt_sse_c
 from app.storage import storage
+from app.storage.tg_context import part_telegram_context, single_telegram_context
 
 
 _SAFE_FILENAME = re.compile(r"[^A-Za-z0-9._-]+")
@@ -34,17 +35,28 @@ async def load_blob_bytes(blob: Blob, *, sse_key: str | None = None) -> bytes:
     if blob.parts:
         chunks: list[bytes] = []
         for part in blob.parts:
-            chunks.append(await _read_single(part.file_id))
+            chat_id, mid = part_telegram_context(blob, part)
+            chunks.append(
+                await _read_single(part.file_id, chat_id=chat_id, message_id=mid)
+            )
         return b"".join(chunks)
 
     if str(blob.file).startswith("multipart:"):
         raise ValueError("Multipart object missing parts metadata")
 
-    return await _read_single(blob.file)
+    chat_id, mid = single_telegram_context(blob)
+    return await _read_single(blob.file, chat_id=chat_id, message_id=mid)
 
 
-async def _read_single(file_id: str) -> bytes:
-    file_obj = await storage.get_file(file_id)
+async def _read_single(
+    file_id: str,
+    *,
+    chat_id: str | None = None,
+    message_id: int | None = None,
+) -> bytes:
+    file_obj = await storage.get_file(
+        file_id, chat_id=chat_id, message_id=message_id
+    )
     data = file_obj.read() if hasattr(file_obj, "read") else file_obj
     if isinstance(data, memoryview):
         data = data.tobytes()

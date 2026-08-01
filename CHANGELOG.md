@@ -4,6 +4,13 @@
 
 _Nothing yet._
 
+## 0.11.1 — 2026-08-01
+
+### Fixes
+- **Telegram downloads:** refresh expired `file_id` via `get_messages(chat_id, message_id)` before/alongside `download_media`; fixes `FILE_REFERENCE_EXPIRED` on GetObject, share download, Copy slow path, and GC probes.
+- Resolve download chat as bucket `telegram_chat_id`, else `.env` `CID`.
+- GC treats file-reference errors as transient (no orphan metadata deletion).
+
 ## 0.11.0 — 2026-08-01
 
 ### Features

@@ -2,7 +2,7 @@ import io
 import logging
 
 from app.core.config import CID, TG_RATE_WAIT_SECONDS
-from app.storage.errors import StorageThrottleError, StorageUnavailableError
+from app.storage.errors import StorageObjectGoneError, StorageThrottleError, StorageUnavailableError
 from app.storage.backend import PutFileResult, Storage
 from app.storage.telegram.account_client import account_client_manager
 from app.storage.telegram.topic import pyrogram_document_topic_kwargs
@@ -119,10 +119,48 @@ class TelegramAccountStorage(Storage):
             raise StorageUnavailableError("forward produced no documents")
         return results
 
-    async def get_file(self, file_id: str) -> io.BufferedReader:
+    async def get_file(
+        self,
+        file_id: str,
+        *,
+        chat_id: str | None = None,
+        message_id: int | None = None,
+    ) -> io.BufferedReader:
         await self._acquire()
         client = self._require_client()
-        file = await client.download_media(file_id, in_memory=True)
+        from pyrogram.errors import FileReferenceExpired
+
+        async def _download_from_message() -> io.BytesIO | None:
+            if message_id is None or chat_id in (None, ""):
+                return None
+            message = await client.get_messages(
+                self._resolve_chat_id(chat_id), message_id
+            )
+            if message is None or message.document is None:
+                return None
+            data = await client.download_media(message, in_memory=True)
+            if data is None:
+                return None
+            if hasattr(data, "seek"):
+                data.seek(0)
+            return data
+
+        if message_id is not None and chat_id not in (None, ""):
+            from_message = await _download_from_message()
+            if from_message is not None:
+                return from_message
+
+        try:
+            file = await client.download_media(file_id, in_memory=True)
+        except FileReferenceExpired:
+            from_message = await _download_from_message()
+            if from_message is not None:
+                return from_message
+            raise StorageUnavailableError(
+                "Telegram file reference expired; could not refresh from message"
+            ) from None
+        if file is None:
+            raise StorageObjectGoneError(f"Telegram media missing for file_id={file_id!r}")
         file.seek(0)
         return file
 

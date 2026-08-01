@@ -32,6 +32,12 @@ from app.s3.subresources import reject_unsupported_subresource
 from app.s3.xml import object_etag
 from app.storage import storage
 from app.storage.disk_cache import cache_delete, cache_get, cache_put
+from app.storage.tg_context import (
+    blob_telegram_chat_id,
+    part_telegram_context,
+    resolve_telegram_chat_id,
+    single_telegram_context,
+)
 from app.storage.tg_label import new_storage_id, tg_document_label
 from app.storage.errors import StorageThrottleError, StorageUnavailableError
 
@@ -92,15 +98,28 @@ def _blob_last_modified(blob) -> datetime | None:
     return None
 
 
-async def _load_object_bytes(blob, *, bucket_name: str, key: str, sse_key: str | None):
+async def _load_object_bytes(
+    blob,
+    *,
+    bucket_name: str,
+    key: str,
+    sse_key: str | None,
+    telegram_chat_id: str | None = None,
+):
     cached = None if blob.encrypted or blob.parts else cache_get(bucket_name, key)
     if cached is not None:
         return cached, False
 
     if blob.parts:
         chunks: list[bytes] = []
+        chat_id = telegram_chat_id or blob_telegram_chat_id(blob)
         for part in blob.parts:
-            file_obj = await storage.get_file(part.file_id)
+            cid, mid = part_telegram_context(blob, part)
+            if cid is None:
+                cid = chat_id
+            file_obj = await storage.get_file(
+                part.file_id, chat_id=cid, message_id=mid
+            )
             data = file_obj.read() if hasattr(file_obj, "read") else file_obj
             if isinstance(data, memoryview):
                 data = data.tobytes()
@@ -109,7 +128,10 @@ async def _load_object_bytes(blob, *, bucket_name: str, key: str, sse_key: str |
             chunks.append(data)
         return b"".join(chunks), False
 
-    result_file = await storage.get_file(blob.file)
+    cid, mid = single_telegram_context(blob)
+    if cid is None:
+        cid = telegram_chat_id
+    result_file = await storage.get_file(blob.file, chat_id=cid, message_id=mid)
     data = result_file.read() if hasattr(result_file, "read") else result_file
     if isinstance(data, memoryview):
         data = data.tobytes()
@@ -376,7 +398,13 @@ async def get_object(
 
     try:
         data, was_encrypted = await _load_object_bytes(
-            blob, bucket_name=bucket_name, key=key, sse_key=sse_key
+            blob,
+            bucket_name=bucket_name,
+            key=key,
+            sse_key=sse_key,
+            telegram_chat_id=resolve_telegram_chat_id(
+                getattr(bucket, "telegram_chat_id", None)
+            ),
         )
     except StorageThrottleError:
         return _slow_down(resource)

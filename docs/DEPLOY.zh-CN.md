@@ -61,7 +61,7 @@ cp .env.example .env
 Telegram 首次登录需要手机号、验证码、可能还有两步验证密码，**无法**在纯后台 `docker compose up` 里完成。
 
 ```bash
-export IMAGE_TAG=${VERSION:-0.11.0}
+export IMAGE_TAG=${VERSION:-0.11.1}
 docker compose pull
 docker compose --profile setup run --rm setup
 ```
@@ -75,7 +75,7 @@ docker compose --profile setup run --rm setup
 ## 4. 启动
 
 ```bash
-export IMAGE_TAG=${IMAGE_TAG:-0.11.0}
+export IMAGE_TAG=${IMAGE_TAG:-0.11.1}
 docker compose up -d
 ```
 
@@ -93,10 +93,11 @@ command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--w
 
 使用 `INITIAL_ADMIN_*` 登录 REST API，在 `/api/v1/credentials` 创建 Access Key，供 boto3 / AWS CLI 使用。
 
-## 6. 升级与空库（MySQL 8.0，建议 ≥0.11.0）
+## 6. 升级与空库（MySQL 8.0，建议 ≥0.11.1）
 
 | 版本 | 说明 |
 |------|------|
+| **0.11.1+** | 修复 `FILE_REFERENCE_EXPIRED`：下载需 `message_id` + 桶 `telegram_chat_id`（或全局 `CID`） |
 | **0.11.0** | 匿名 TG 文件名、REST 改名、同桶 Copy 免重传、跨桶 TG 转发、MPU 暂存+相册 Complete、message_id 引用计数。升级需手工 `ALTER TABLE`（见下） |
 | **0.10.9+** | S3 Browser：`GET /{bucket}/?delimiter=...` 列表不再 400 |
 | **0.10.8+** | S3 Browser：列表默认 V2；Pyrogram 话题上传修复 |
@@ -110,7 +111,7 @@ command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--w
 **推荐升级步骤（个人 NAS、可接受清空元数据）：**
 
 ```bash
-export IMAGE_TAG=0.11.0
+export IMAGE_TAG=0.11.1
 docker compose pull
 docker compose up -d --force-recreate
 ```
@@ -157,6 +158,7 @@ ALTER TABLE multipart_parts ADD COLUMN staging_path VARCHAR(512) NULL;
 - **`Can't connect to MySQL server` / 超时**：检查 `MYSQL_HOST` 对容器是否可达（勿用指向容器自身的 `127.0.0.1`）。
 - **`telegram.ok: false`**：检查 `.env` 中 `SESSION_STRING` 是否完整、无换行截断；会话失效则重新跑 setup。
 - **换 Telegram 账号**：重新执行 setup，更新 `SESSION_STRING` 后 `docker compose up -d` 重启 app。
+- **GetObject 报 503 / 日志 `FILE_REFERENCE_EXPIRED`**：升级到 **0.11.1+**；确认桶配置了 `telegram_chat_id`（或 `.env` `CID` 与消息所在群一致），且对象行有 `message_id`。TG 里消息被删则只能重新上传。
 - **仅更新镜像**：`docker compose pull && docker compose up -d`。
 
 本地开发请克隆仓库，使用根目录 `docker-compose.yaml`（从源码 build）。

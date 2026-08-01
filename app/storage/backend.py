@@ -24,7 +24,13 @@ class Storage(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def get_file(self, file_id: str):
+    async def get_file(
+        self,
+        file_id: str,
+        *,
+        chat_id: str | None = None,
+        message_id: int | None = None,
+    ):
         raise NotImplementedError
 
     @abstractmethod

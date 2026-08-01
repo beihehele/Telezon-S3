@@ -113,7 +113,7 @@ async def test_orphan_gc_removes_only_confirmed_gone(mock_db, monkeypatch):
     )
     await mock_db.commit()
 
-    async def get_file(file_id):
+    async def get_file(file_id, *, chat_id=None, message_id=None):
         if file_id == "f1":
             raise StorageObjectGoneError("gone")
         raise RuntimeError("unknown")
