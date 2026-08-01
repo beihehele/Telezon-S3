@@ -64,6 +64,53 @@ async def test_list_objects_v2_prefix(mock_db, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_list_objects_without_list_type_defaults_to_v2(mock_db, monkeypatch):
+    """S3 Browser lists with delimiter/prefix but omits list-type=2."""
+
+    blobs = [
+        BlobInDb(path="a/1", file="a/1", size=1, bucket_name="alice"),
+    ]
+
+    async def fake_bucket(db, name):
+        return _bucket()
+
+    async def fake_verify(bucket, request, db=None, body=None):
+        return "ok"
+
+    async def fake_list(db, bucket_name, prefix="", start_after="", max_keys=1000):
+        rows = [b for b in blobs if b.path.startswith(prefix) and b.path > start_after]
+        rows.sort(key=lambda item: item.path)
+        return rows[:max_keys]
+
+    monkeypatch.setattr(
+        "app.s3.handlers.list_objects.crud_get_bucket_by_name", fake_bucket
+    )
+    monkeypatch.setattr(
+        "app.s3.handlers.list_objects.authorize_request_for_bucket", fake_verify
+    )
+    monkeypatch.setattr(
+        "app.s3.handlers.list_objects.crud_list_blobs_for_s3", fake_list
+    )
+
+    async def override_db():
+        yield mock_db
+
+    app.dependency_overrides[get_database] = override_db
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get(
+                "/alice",
+                params={"delimiter": "/", "max-keys": "1000", "prefix": ""},
+            )
+            assert resp.status_code == 200
+            assert "ListBucketResult" in resp.text
+            assert "<CommonPrefixes>" in resp.text or "<Key>" in resp.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
 async def test_list_objects_v2_continuation(mock_db, monkeypatch):
     blobs = [
         BlobInDb(path="a/1", file="a/1", size=1, bucket_name="alice"),

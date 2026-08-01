@@ -131,17 +131,28 @@ async def list_objects(
         )
         return Response(content=body, media_type="application/xml")
 
+    if "object-lock" in request.query_params:
+        bucket = await crud_get_bucket_by_name(db, bucket_name)
+        if not bucket:
+            return s3_error_response(
+                status_code=404, code="NoSuchBucket", resource=resource
+            )
+        auth = await authorize_request_for_bucket(bucket, request, db)
+        if auth != AUTH_OK:
+            return auth_error_response(auth, resource)
+        body = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<ObjectLockConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01"/>'
+        )
+        return Response(content=body, media_type="application/xml")
+
     blocked = reject_unsupported_subresource(request, resource)
     if blocked:
         return blocked
     list_type = request.query_params.get("list-type")
     if list_type is None:
-        return s3_error_response(
-            status_code=400,
-            code="InvalidRequest",
-            message="Missing list-type query parameter; use list-type=2",
-            resource=resource,
-        )
+        # S3 Browser and some clients omit list-type; Telezon only implements V2.
+        list_type = "2"
     if list_type != "2":
         return s3_error_response(
             status_code=501,

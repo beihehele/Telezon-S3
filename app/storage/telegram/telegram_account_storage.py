@@ -5,6 +5,7 @@ from app.core.config import CID, TG_RATE_WAIT_SECONDS
 from app.storage.errors import StorageThrottleError, StorageUnavailableError
 from app.storage.backend import PutFileResult, Storage
 from app.storage.telegram.account_client import account_client_manager
+from app.storage.telegram.topic import pyrogram_document_topic_kwargs
 from app.storage.telegram_limiter import telegram_rate_limiter
 
 logger = logging.getLogger(__name__)
@@ -40,9 +41,7 @@ class TelegramAccountStorage(Storage):
         await self._acquire()
         document = io.BytesIO(file)
         client = self._require_client()
-        kwargs = {"file_name": filename}
-        if topic_id is not None:
-            kwargs["message_thread_id"] = topic_id
+        kwargs = {"file_name": filename, **pyrogram_document_topic_kwargs(topic_id)}
         response = await client.send_document(
             self._resolve_chat_id(chat_id), document, **kwargs
         )

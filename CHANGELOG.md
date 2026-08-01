@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.10.8 — 2026-08-01
+
+### Fixes (S3 clients)
+- ListObjects: default missing `list-type` to V2 (fixes S3 Browser `GET /{bucket}?delimiter=...` 400).
+- Stub empty `ObjectLockConfiguration` for `?object-lock=` bucket probes.
+- Pyrogram uploads: map `telegram_topic_id` to `reply_to_message_id` (fixes `message_thread_id` TypeError on PutObject).
+
 ## 0.10.7 — 2026-07-31
 
 ### Fixes
