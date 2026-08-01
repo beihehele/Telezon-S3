@@ -116,6 +116,27 @@ async def test_list_objects_without_list_type_defaults_to_v2(mock_db, monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_get_object_empty_key_delegates_to_list_objects(mock_db, monkeypatch):
+    """When routing hits object handler with key='' and list query, delegate."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from starlette.responses import Response
+
+    from app.s3.handlers import object as object_handlers
+
+    sentinel = Response(content=b"<ListBucketResult/>", media_type="application/xml")
+    mock_list = AsyncMock(return_value=sentinel)
+    monkeypatch.setattr(object_handlers, "list_objects", mock_list)
+
+    request = MagicMock()
+    request.query_params = {"delimiter": "/", "max-keys": "1000", "prefix": ""}
+
+    result = await object_handlers.get_object(request, "admin", "", mock_db)
+    mock_list.assert_awaited_once_with(request, "admin", mock_db)
+    assert result is sentinel
+
+
+@pytest.mark.asyncio
 async def test_list_objects_v2_continuation(mock_db, monkeypatch):
     blobs = [
         BlobInDb(path="a/1", file="a/1", size=1, bucket_name="alice"),

@@ -20,19 +20,6 @@ from app.s3.xml import build_list_objects_v2_xml, rollup_with_delimiter
 router = APIRouter(tags=["S3"])
 
 
-def _looks_like_list_objects(request: Request) -> bool:
-    q = request.query_params
-    return (
-        "delimiter" in q
-        or "prefix" in q
-        or "max-keys" in q
-        or "list-type" in q
-        or "continuation-token" in q
-        or "start-after" in q
-        or "encoding-type" in q
-    )
-
-
 def _fmt_iso(value) -> str:
     if value is None:
         return ""

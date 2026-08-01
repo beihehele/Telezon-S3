@@ -30,7 +30,6 @@ def _patch_session_factory(mock_db, monkeypatch):
 
     maker = _Maker()
     monkeypatch.setattr(db_session, "async_session_factory", maker)
-    monkeypatch.setattr("app.ops.gc.async_session_factory", maker)
 
 
 @pytest.mark.asyncio

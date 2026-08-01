@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.10.10 — 2026-08-01
+
+### Fixes / tests
+- Extract `looks_like_list_objects` to `app/s3/list_query.py`; unit test for empty-key GetObject → ListObjects delegation.
+- Fix GC test to patch `app.db.session` only (matches 0.10.7 session access pattern).
+
 ## 0.10.9 — 2026-08-01
 
 ### Fixes (S3 Browser)
