@@ -85,6 +85,20 @@ CONSOLE_E2E_BASE=http://127.0.0.1:4173/console/ npx playwright test --grep "logi
 
 完整 E2E（登录 → 文件页）需运行中的 API，并设置 `CONSOLE_E2E_USER`、`CONSOLE_E2E_PASSWORD`；见 `console/README.md`。
 
+### 部署后 HTTP 冒烟（NAS / 预发布）
+
+对**已运行的实例**做 API 黑盒检查（健康、控制台挂载、登录、presign 小文件往返、可选 413/Range）。**不进 CI**（需真实服务与账号）。
+
+```powershell
+$env:TELEZON_SMOKE_BASE = "http://你的主机:8088"
+$env:CONSOLE_E2E_USER = "admin"
+$env:CONSOLE_E2E_PASSWORD = "你的密码"
+# 可选：TELEZON_SMOKE_TIMEOUT、TELEZON_SMOKE_TG_TIMEOUT（大对象 Range 回源）
+python scripts/smoke_deploy.py
+```
+
+与 Playwright（`console/e2e/smoke.spec.ts`）互补：脚本覆盖 API 与 content 代理；Playwright 覆盖登录页与文件壳。手工项见 [`docs/CONSOLE-VERIFY.zh-CN.md`](CONSOLE-VERIFY.zh-CN.md)。
+
 ## 相关文档
 
 - 路线图与勾选进度：[`docs/ROADMAP.zh-CN.md`](ROADMAP.zh-CN.md)

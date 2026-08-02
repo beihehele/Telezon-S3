@@ -1,6 +1,8 @@
 # Web 控制台验收清单（NAS / 预发布）
 
-在 `feat/0.12-console` 合入或打 tag 前，建议在同一台将部署的机器上走一遍（`ENABLE_CONSOLE=1`，`PUBLIC_BASE_URL` 与浏览器访问地址一致）。
+在部署升级后，建议在同一台将部署的机器上走一遍（`ENABLE_CONSOLE=1`，`PUBLIC_BASE_URL` 与浏览器访问地址一致）。
+
+**自动化（可选）：** 设置 `TELEZON_SMOKE_BASE`、`CONSOLE_E2E_USER`、`CONSOLE_E2E_PASSWORD` 后运行 `python scripts/smoke_deploy.py`；浏览器 UI 用 `cd console && npx playwright test`（需 `CONSOLE_E2E_BASE`）。详见 [`docs/DEVELOP.zh-CN.md`](DEVELOP.zh-CN.md)。
 
 ## 环境
 
