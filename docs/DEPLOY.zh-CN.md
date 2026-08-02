@@ -97,6 +97,8 @@ command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--w
 
 | 版本 | 说明 |
 |------|------|
+| **0.14.2** | 控制台多选/预览优化；`GET …/content` 超过 **8MB** 且无 `Range` 返回 **413**（防误拉全文件）。见「0.14.1 → 0.14.2」 |
+| **0.14.1** | 修复 `/console` 被 S3 当成桶名；控制台须在 S3 路由之前挂载 |
 | **0.14.0** | 在 **0.11.2+** 之上：**无新增 MySQL 迁移**；镜像内嵌 Web 控制台；可选 `.env` 见下文「从 0.11.2 升级到 0.14.0」 |
 | **0.11.1+** | 修复 `FILE_REFERENCE_EXPIRED`：下载需 `message_id` + 桶 `telegram_chat_id`（或全局 `CID`） |
 | **0.11.0** | 匿名 TG 文件名、REST 改名、同桶 Copy 免重传、跨桶 TG 转发、MPU 暂存+相册 Complete、message_id 引用计数。升级需手工 `ALTER TABLE`（见下） |
@@ -163,6 +165,18 @@ docker compose up -d --force-recreate
 
 **功能清单与版本合订说明：** [`CHANGELOG.md`](../CHANGELOG.md) 的 **0.14.0**；路线图：[`docs/ROADMAP.zh-CN.md`](ROADMAP.zh-CN.md)。
 
+### 从 0.14.1 升级到 0.14.2（保留数据）
+
+```bash
+export IMAGE_TAG=0.14.2
+docker compose pull
+docker compose up -d --force-recreate
+```
+
+- **无数据库迁移。**
+- 控制台：修复文件列表**多选/批量删除**；大图/视频预览体验（loading、大文件自动预签名）。
+- 可选 `.env`：`CONTENT_PROXY_MAX_FULL_BYTES`（默认 8388608）。超过该大小且**不带** `Range` 的 `GET …/content` 返回 **413**，浏览器视频应自动发 Range；若预览仍慢，请用控制台「预签名预览」并设置 `PUBLIC_BASE_URL`。
+
 若日志里仍是 **建表失败**（多见于从很老版本升级），在 MySQL 上清空应用库后重启（**会删除所有桶/对象元数据**，Telegram 上的文件消息不会自动删）：
 
 ```sql
@@ -208,15 +222,18 @@ ALTER TABLE multipart_parts ADD COLUMN staging_path VARCHAR(512) NULL;
 | `ENABLE_CONSOLE` | `1` 时挂载 `/console/`（Release 镜像内已含构建好的 SPA） |
 | `ALLOW_SIGNUP` | `1` 开放控制台自助注册（`/api/auth/signup`）；公网 NAS 建议 `0`，仅管理员建号 |
 | `PUBLIC_BASE_URL` | 浏览器可访问的 URL（预签名 Host） |
+| `MEDIA_TICKET_MAX_SECONDS` | 视频预览 ticket 有效期（默认 900） |
+| `CONTENT_PROXY_MAX_FULL_BYTES` | 允许 **无 Range** 的 content 代理最大字节（默认 8MB）；更大对象必须用 Range 或预签名 GET |
 | 访问 | `https://<域名>/console/#/login` |
 | 开发 | `console/` 目录 `npm install && npm run dev`；发布静态资源：`npm run build:app` |
 
-视频预览：`POST …/content-ticket` 领取短期 **media_token**，再 `GET …/content?media_token=…`（支持 Range）。**勿分享含 token 的 URL**；登录 JWT 仅用于 API `Authorization`。
+视频预览：`POST …/content-ticket` 领取短期 **media_token**，再 `GET …/content?media_token=…`（支持 Range）。**勿分享含 token 的 URL**；登录 JWT 仅用于 API `Authorization`。大文件（如 >80MB MP4）首屏依赖 Telegram 回源，可能较慢；建议使用 **预签名预览** 或下载后本地播放。无 `Range` 的全量 content 拉取对超过 `CONTENT_PROXY_MAX_FULL_BYTES` 的对象会返回 **413**。
 
 **发布前验收：** [`docs/CONSOLE-VERIFY.zh-CN.md`](CONSOLE-VERIFY.zh-CN.md)
 
 ## 常见问题
 
+- **控制台预览很慢或一直转圈**：打开浏览器开发者工具 → Network，确认 `GET …/content` 为 **206**（Range）而非 **200** 拉全文件。设 `PUBLIC_BASE_URL`；控制台切「预签名预览」；≥0.14.2 对大文件无 Range 的 content 返回 **413** 以防误拉全量。
 - **控制台打开成 S3 `NoSuchBucket`，Resource 为 `/console`**：请求被 S3 列表路由当成桶名 `console`。请设 `ENABLE_CONSOLE=1`，并使用 **≥0.14.1** 镜像（0.14.0 控制台挂载在 S3 之后，会触发此问题）。正确地址：`http://<host>:<port>/console/#/login` 或 `…/console/`。
 - **`database.ok: false`**：检查 `DATABASE_URL` / `MYSQL_*`、网络与账号权限；可设 `HEALTH_EXPOSE_ERRORS=1` 查看 `database.error`。在容器内测试：`python -c "import socket; socket.create_connection(('你的MYSQL_HOST',3306),5)"`。
 - **建表报错 1101 / 1170 / 1071**：请使用 **0.10.4+** 镜像并对空库执行 `create_all`（见「升级与空库」）。1071 多为 `path(768)` 索引；0.10.4 改为 `path(512)`。

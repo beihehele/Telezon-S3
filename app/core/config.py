@@ -117,6 +117,11 @@ ENABLE_CONSOLE = os.getenv("ENABLE_CONSOLE", "0") == "1"
 MEDIA_TICKET_MAX_SECONDS = max(
     60, min(int(os.getenv("MEDIA_TICKET_MAX_SECONDS", "900")), 3600)
 )
+# Refuse full-file content proxy above this; clients must use Range (video/img do).
+CONTENT_PROXY_MAX_FULL_BYTES = max(
+    1,
+    int(os.getenv("CONTENT_PROXY_MAX_FULL_BYTES", str(8 * 1024 * 1024))),
+)
 # Public self-service signup (console /api/auth/signup). Set 0 on production NAS.
 ALLOW_SIGNUP = os.getenv("ALLOW_SIGNUP", "1") == "1"
 

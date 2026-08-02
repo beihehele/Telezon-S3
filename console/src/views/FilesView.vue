@@ -21,11 +21,41 @@ const previewKey = ref('')
 const previewKind = ref<'image' | 'video' | 'other'>('other')
 const previewUrl = ref('')
 const previewOpen = ref(false)
+const previewLoading = ref(false)
 const previewMode = ref<'jwt' | 'presign'>('jwt')
 const mpuOpen = ref(false)
 const mpuPct = ref(0)
 const shareOpen = ref(false)
 const shareKey = ref('')
+const tableRef = ref<{ clearSelection: () => void } | null>(null)
+
+const tableData = computed(() => [
+  ...prefixes.value.map((p) => ({ key: p, folder: true, size: 0, last_modified: '' })),
+  ...rows.value.map((r) => ({ ...r, folder: false })),
+])
+
+function rowSelectable(row: { folder?: boolean }) {
+  return !row.folder
+}
+
+function onSelectionChange(rowsSelected: { key: string; folder?: boolean }[]) {
+  selected.value = rowsSelected.filter((x) => !x.folder).map((x) => x.key)
+}
+
+const CONTENT_PROXY_HINT_BYTES = 8 * 1024 * 1024
+
+function selectedLabel(n: number) {
+  return zhCN.selectedCount.replace('{n}', String(n))
+}
+
+function displayName(row: { key: string; folder: boolean }) {
+  if (row.folder) {
+    const parts = row.key.replace(/\/$/, '').split('/')
+    return parts[parts.length - 1] ? `${parts[parts.length - 1]}/` : row.key
+  }
+  const parts = row.key.split('/')
+  return parts[parts.length - 1] || row.key
+}
 
 const breadcrumbs = computed(() => {
   const parts = prefix.value.split('/').filter(Boolean)
@@ -49,6 +79,8 @@ async function load() {
     })
     rows.value = data.contents || []
     prefixes.value = data.common_prefixes || []
+    selected.value = []
+    tableRef.value?.clearSelection()
   } finally {
     loading.value = false
   }
@@ -99,10 +131,36 @@ async function removeSelected() {
     { keys: selected.value },
   )
   selected.value = []
+  tableRef.value?.clearSelection()
   await load()
 }
 
-async function preview(key: string) {
+function revokePreviewUrl() {
+  if (previewUrl.value.startsWith('blob:')) {
+    URL.revokeObjectURL(previewUrl.value)
+  }
+  previewUrl.value = ''
+}
+
+function onPreviewDialogClosed() {
+  revokePreviewUrl()
+  previewLoading.value = false
+}
+
+function applyOtherPresignUrl(url: string) {
+  previewUrl.value = url
+  previewLoading.value = false
+  const opened = window.open(url, '_blank', 'noopener,noreferrer')
+  if (opened) {
+    previewOpen.value = false
+    ElMessage.success(zhCN.previewOpenedNewTab)
+  } else {
+    ElMessage.warning(zhCN.previewOpenBlocked)
+  }
+}
+
+async function preview(key: string, size = 0) {
+  revokePreviewUrl()
   previewKey.value = key
   const lower = key.toLowerCase()
   if (/\.(mp4|webm)$/i.test(lower)) {
@@ -112,24 +170,56 @@ async function preview(key: string) {
   } else {
     previewKind.value = 'other'
   }
-  if (previewMode.value === 'jwt') {
-    if (previewKind.value === 'video') {
-      const ticket = await createContentTicket(bucketName.value, key)
-      previewUrl.value = contentUrl(bucketName.value, key, true, ticket)
-    } else {
-      const res = await fetch(contentUrl(bucketName.value, key, true), {
-        headers: { Authorization: `Bearer ${getToken()}` },
-      })
-      if (!res.ok) {
-        ElMessage.error('预览失败')
-        return
-      }
-      previewUrl.value = URL.createObjectURL(await res.blob())
-    }
-  } else {
-    previewUrl.value = await presignGet(bucketName.value, key)
-  }
   previewOpen.value = true
+  previewLoading.value = true
+  const large = size > 80 * 1024 * 1024
+  const mode =
+    large && previewMode.value === 'jwt' ? 'presign' : previewMode.value
+  if (large && mode === 'presign') {
+    ElMessage.info('大文件已改用预签名链接预览，便于 Range 从存储拉流')
+  }
+  try {
+    if (mode === 'jwt') {
+      if (previewKind.value === 'video' || previewKind.value === 'image') {
+        const ticket = await createContentTicket(bucketName.value, key)
+        previewUrl.value = contentUrl(bucketName.value, key, true, ticket)
+      } else {
+        if (size > CONTENT_PROXY_HINT_BYTES) {
+          applyOtherPresignUrl(await presignGet(bucketName.value, key))
+        } else {
+          const res = await fetch(contentUrl(bucketName.value, key, true), {
+            headers: { Authorization: `Bearer ${getToken()}` },
+          })
+          if (!res.ok) {
+            throw new Error('preview failed')
+          }
+          previewUrl.value = URL.createObjectURL(await res.blob())
+          previewLoading.value = false
+        }
+      }
+    } else {
+      const url = await presignGet(bucketName.value, key)
+      if (previewKind.value === 'other') {
+        applyOtherPresignUrl(url)
+      } else {
+        previewUrl.value = url
+        previewLoading.value = false
+      }
+    }
+  } catch {
+    ElMessage.error('预览失败')
+    previewOpen.value = false
+    previewLoading.value = false
+  }
+}
+
+function onPreviewMediaReady() {
+  previewLoading.value = false
+}
+
+function onPreviewMediaError() {
+  previewLoading.value = false
+  ElMessage.error('媒体加载失败，可尝试「预签名预览」或下载后本地播放')
 }
 
 function isPreviewable(key: string) {
@@ -179,8 +269,9 @@ async function renameKey(key: string) {
         <el-button type="primary">{{ zhCN.upload }}</el-button>
       </el-upload>
       <el-button :disabled="!selected.length" type="danger" @click="removeSelected">
-        {{ zhCN.delete }}
+        {{ zhCN.delete }}<template v-if="selected.length"> ({{ selected.length }})</template>
       </el-button>
+      <span v-if="selected.length" class="selected-hint">{{ selectedLabel(selected.length) }}</span>
       <el-button @click="load">{{ zhCN.refresh }}</el-button>
       <el-radio-group v-model="previewMode" size="small">
         <el-radio-button value="jwt">{{ zhCN.previewJwt }}</el-radio-button>
@@ -188,19 +279,19 @@ async function renameKey(key: string) {
       </el-radio-group>
     </div>
     <p class="hint">{{ zhCN.previewTip }}</p>
+    <div class="files-table-wrap">
     <el-table
+      ref="tableRef"
       v-loading="loading"
-      :data="[
-        ...prefixes.map((p) => ({ key: p, folder: true, size: 0 })),
-        ...rows.map((r) => ({ ...r, folder: false })),
-      ]"
-      @selection-change="(s: any[]) => (selected = s.filter((x) => !x.folder).map((x) => x.key))"
+      row-key="key"
+      :data="tableData"
+      @selection-change="onSelectionChange"
     >
-      <el-table-column type="selection" width="48" />
-      <el-table-column label="名称">
+      <el-table-column type="selection" width="48" :selectable="rowSelectable" />
+      <el-table-column label="名称" min-width="200" show-overflow-tooltip>
         <template #default="{ row }">
-          <a v-if="row.folder" href="#" @click.prevent="enterFolder(row.key)">{{ row.key }}</a>
-          <span v-else>{{ row.key }}</span>
+          <a v-if="row.folder" href="#" @click.prevent="enterFolder(row.key)">{{ displayName(row) }}</a>
+          <span v-else>{{ displayName(row) }}</span>
         </template>
       </el-table-column>
       <el-table-column label="大小" width="100">
@@ -209,10 +300,10 @@ async function renameKey(key: string) {
         </template>
       </el-table-column>
       <el-table-column prop="last_modified" label="修改时间" width="180" />
-      <el-table-column label="操作" width="280">
+      <el-table-column label="操作" width="280" fixed="right">
         <template #default="{ row }">
           <template v-if="!row.folder">
-            <el-button v-if="isPreviewable(row.key)" link @click="preview(row.key)">
+            <el-button v-if="isPreviewable(row.key)" link @click="preview(row.key, row.size)">
               {{ zhCN.preview }}
             </el-button>
             <el-button link @click="downloadKey(row.key)">{{ zhCN.download }}</el-button>
@@ -222,9 +313,39 @@ async function renameKey(key: string) {
         </template>
       </el-table-column>
     </el-table>
-    <el-dialog v-model="previewOpen" width="80%" destroy-on-close>
-      <video v-if="previewKind === 'video'" :src="previewUrl" controls style="width: 100%" />
-      <img v-else-if="previewKind === 'image'" :src="previewUrl" style="max-width: 100%" />
+    </div>
+    <el-dialog v-model="previewOpen" width="80%" destroy-on-close @closed="onPreviewDialogClosed">
+      <div v-loading="previewLoading" style="min-height: 120px">
+        <video
+          v-if="previewKind === 'video' && previewUrl"
+          :src="previewUrl"
+          controls
+          preload="metadata"
+          playsinline
+          style="width: 100%; max-height: 70vh"
+          @loadeddata="onPreviewMediaReady"
+          @canplay="onPreviewMediaReady"
+          @error="onPreviewMediaError"
+        />
+        <img
+          v-else-if="previewKind === 'image' && previewUrl"
+          :src="previewUrl"
+          style="max-width: 100%; max-height: 70vh"
+          @load="onPreviewMediaReady"
+          @error="onPreviewMediaError"
+        />
+        <p v-else-if="previewKind === 'other'">
+          <template
+            v-if="previewUrl && (previewUrl.startsWith('http://') || previewUrl.startsWith('https://'))"
+          >
+            {{ zhCN.previewOpenBlocked }}
+            <el-link :href="previewUrl" target="_blank" rel="noopener noreferrer">
+              {{ zhCN.openPreviewLink }}
+            </el-link>
+          </template>
+          <template v-else>{{ zhCN.previewUnsupported }}</template>
+        </p>
+      </div>
     </el-dialog>
     <el-dialog v-model="mpuOpen" :title="zhCN.uploadMpu" :close-on-click-modal="false">
       <el-progress :percentage="mpuPct" />
@@ -247,5 +368,14 @@ async function renameKey(key: string) {
 .hint {
   color: var(--el-text-color-secondary);
   font-size: 0.85rem;
+}
+.selected-hint {
+  color: var(--el-text-color-secondary);
+  font-size: 0.85rem;
+  align-self: center;
+}
+.files-table-wrap {
+  width: 100%;
+  overflow-x: auto;
 }
 </style>

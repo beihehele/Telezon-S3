@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.14.2 — 2026-08-02
+
+### Fixed
+
+- **Web console:** file table multi-select (`row-key`, stable row data); image preview via media ticket streaming; large-file preview defaults to presign; loading state for media dialog; large txt/json open presign URL in a new tab (link fallback if popup blocked).
+- **Content proxy:** reject full `GET …/content` without `Range` when object size exceeds `CONTENT_PROXY_MAX_FULL_BYTES` (default 8MB); return 413 with `Accept-Ranges`.
+
+### Docs
+
+- `DEPLOY.zh-CN.md`: `CONTENT_PROXY_MAX_FULL_BYTES`, preview troubleshooting, **0.14.1 → 0.14.2** upgrade note.
+
 ## 0.14.1 — 2026-08-01
 
 ### Fixed

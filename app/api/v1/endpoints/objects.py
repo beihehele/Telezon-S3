@@ -12,7 +12,7 @@ from app.api.v1.object_list import list_objects_page
 import jwt
 from jwt import PyJWTError
 
-from app.core.config import MEDIA_TICKET_MAX_SECONDS, SECRET_KEY
+from app.core.config import MEDIA_TICKET_MAX_SECONDS, SECRET_KEY, CONTENT_PROXY_MAX_FULL_BYTES
 from app.core.media_ticket import create_media_ticket, decode_media_ticket
 from app.core.token import ALGORITHM, get_current_user
 from app.crud.user import crud_get_user_by_username
@@ -170,6 +170,20 @@ async def _serve_object_content(
                 "Content-Length": str(len(data)),
                 "Accept-Ranges": "bytes",
                 "Content-Disposition": cd,
+            },
+        )
+
+    if total > CONTENT_PROXY_MAX_FULL_BYTES:
+        return Response(
+            status_code=413,
+            content=(
+                "Object too large for full download via content proxy; "
+                "use Range requests or presigned GET."
+            ),
+            media_type="text/plain",
+            headers={
+                "Accept-Ranges": "bytes",
+                "Content-Range": f"bytes */{total}",
             },
         )
 
